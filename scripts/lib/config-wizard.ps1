@@ -41,12 +41,40 @@ $script:McpConfigSchemas = @{
     'mcp-gerrit' = @{
         Format = 'json'
         Fields = @(
-            @{ Key = 'baseUrl';    Prompt = '实例地址（如 https://gerrit.example.com）'; Required = $true;  Sensitive = $false; Kind = 'text' }
-            @{ Key = 'authMethod'; Prompt = '认证方式';                                   Required = $true;  Sensitive = $false; Kind = 'choice'; Choices = @('http-password', 'basic', 'token') }
-            @{ Key = 'username';   Prompt = '用户名';                                     Required = $true;  Sensitive = $false; Kind = 'text' }
-            @{ Key = 'credential'; Prompt = 'HTTP 凭证 / 令牌';                           Required = $true;  Sensitive = $true;  Kind = 'text' }
-            @{ Key = 'instances';  Prompt = '多实例地址（逗号分隔，可留空）';             Required = $false; Sensitive = $false; Kind = 'list' }
+            @{ Key = 'instanceName'; Prompt = '实例显示名称（可留空）';                          Required = $false; Sensitive = $false; Kind = 'text' }
+            @{ Key = 'baseUrl';      Prompt = '实例地址（如 https://gerrit.example.com）';      Required = $true;  Sensitive = $false; Kind = 'text' }
+            @{ Key = 'username';     Prompt = '用户名';                                        Required = $true;  Sensitive = $false; Kind = 'text' }
+            @{ Key = 'credential';   Prompt = 'HTTP 凭证（Gerrit 设置中的 HTTP Password）';    Required = $true;  Sensitive = $true;  Kind = 'text' }
         )
+        # gerrit-mcp-server 1.0.8 要求嵌套配置结构（见 mcp-gerrit/gerrit_config.sample.json）：
+        # BuildJson 用扁平录入值组装完整 JSON；JsonGet 从嵌套结构读回字段值（就绪判定用）。
+        BuildJson = { param($Values)
+            $name = if ($Values['instanceName']) { $Values['instanceName'] } else { 'Gerrit' }
+            $cfg = [ordered]@{
+                default_gerrit_base_url = $Values['baseUrl']
+                gerrit_hosts = @(
+                    [ordered]@{
+                        name = $name
+                        external_url = $Values['baseUrl']
+                        authentication = [ordered]@{
+                            type = 'http_basic'
+                            username = $Values['username']
+                            auth_token = $Values['credential']
+                        }
+                    }
+                )
+            }
+            return ($cfg | ConvertTo-Json -Depth 10)
+        }
+        JsonGet = { param($Json, $Key)
+            switch ($Key) {
+                'baseUrl'      { return $Json.default_gerrit_base_url }
+                'instanceName' { if ($Json.gerrit_hosts -and @($Json.gerrit_hosts).Count -gt 0) { return @($Json.gerrit_hosts)[0].name } }
+                'username'     { if ($Json.gerrit_hosts -and @($Json.gerrit_hosts).Count -gt 0) { return @($Json.gerrit_hosts)[0].authentication.username } }
+                'credential'   { if ($Json.gerrit_hosts -and @($Json.gerrit_hosts).Count -gt 0) { return @($Json.gerrit_hosts)[0].authentication.auth_token } }
+            }
+            return $null
+        }
     }
     'mcp-github' = @{
         Format = 'env'
@@ -174,6 +202,8 @@ function Get-McpConfigValue {
         return $null
     }
     $json = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+    $jsonGet = $script:McpConfigSchemas[$Service.Id].JsonGet
+    if ($jsonGet) { return & $jsonGet $json $Key }
     $prop = $json.PSObject.Properties[$Key]
     if ($prop) { return $prop.Value }
     return $null
@@ -211,7 +241,13 @@ function Write-McpConfigFile {
         return
     }
 
-    # json 格式
+    # json 格式（BuildJson：嵌套结构由 schema 专属函数组装）
+    $buildJson = $script:McpConfigSchemas[$Service.Id].BuildJson
+    if ($buildJson) {
+        $text = & $buildJson $Values
+        [IO.File]::WriteAllText($path, $text, $utf8NoBom)
+        return
+    }
     $json = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
     foreach ($key in $Values.Keys) {
         $prop = $json.PSObject.Properties[$key]
@@ -273,12 +309,43 @@ function Invoke-McpConnectivityTest {
     param([Parameter(Mandatory = $true)][string]$Code)
     $svc = Get-McpServiceByCode -Code $Code
     if (-not $svc) { throw "未知服务代号：$Code" }
-    Write-Host "[占位] $($svc.DisplayName) 连通性测试将在 M5–M8 随服务接入时提供真实实现。"
-    [pscustomobject]@{
-        Code    = $svc.Code
-        Tested  = $false
-        Message = '连通性测试为占位入口，将在 M5–M8 实现真实接口调用'
+    if ($svc.Id -ne 'mcp-gerrit') {
+        Write-Host "[占位] $($svc.DisplayName) 连通性测试将在 M6–M8 随服务接入时提供真实实现。"
+        return [pscustomobject]@{
+            Code    = $svc.Code
+            Tested  = $false
+            Message = '连通性测试为占位入口，将在 M6–M8 实现真实接口调用'
+        }
     }
+    # —— Gerrit：只读 REST 验证（GET /a/accounts/self，HTTP Basic）——
+    $result = [pscustomobject]@{ Code = $svc.Code; Tested = $false; Message = '' }
+    $baseUrl   = Get-McpConfigValue -Service $svc -Key 'baseUrl'
+    $username  = Get-McpConfigValue -Service $svc -Key 'username'
+    $credential = Get-McpConfigValue -Service $svc -Key 'credential'
+    if (-not $baseUrl -or -not $username -or -not $credential) {
+        $result.Message = '配置未就绪：请先运行配置向导完成实例地址、用户名与 HTTP 凭证录入。'
+        Write-Host $result.Message
+        return $result
+    }
+    $url = ($baseUrl.TrimEnd('/')) + '/a/accounts/self'
+    $pair = '{0}:{1}' -f $username, $credential
+    $b64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
+    try {
+        $resp = Invoke-WebRequest -Uri $url -Headers @{ Authorization = "Basic $b64" } -TimeoutSec 20 -UseBasicParsing
+        $body = (($resp.Content) -replace "^\)\]\}'\s*", '') | ConvertFrom-Json
+        $who = if ($body.username) { $body.username } else { $body.name }
+        $result.Tested = $true
+        $result.Message = '连通成功：账号 {0}（_account_id {1}）' -f $who, $body._account_id
+        Write-Host $result.Message
+    } catch {
+        $status = $null
+        if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode }
+        if ($status -eq 401) { $result.Message = '连通失败：认证被拒绝（401），请检查用户名与 HTTP 凭证。' }
+        elseif ($status) { $result.Message = '连通失败：HTTP {0}' -f $status }
+        else { $result.Message = '连通失败：' + $_.Exception.Message }
+        Write-Host $result.Message
+    }
+    return $result
 }
 
 # ---------------------------------------------------------------------------

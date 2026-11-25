@@ -1,0 +1,5 @@
+# Gerrit MCP 服务依赖锁定（M5 已验证组合，勿随意升版）
+# gerrit-mcp-server 1.0.8 声明的 mcp 依赖无版本上限，而其代码使用 FastMCP（mcp 1.x API），
+# 若装到 mcp 2.x 会 ModuleNotFoundError: mcp.server.fastmcp，因此必须显式锁定 mcp<2。
+gerrit-mcp-server==1.0.8
+mcp==1.30.0
