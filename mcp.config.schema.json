@@ -1,0 +1,187 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ai-mcp 统一配置（mcp.config.json）结构定义",
+  "description": "只约束结构、类型、枚举与必填键，不含任何凭证。占位符（<...>）是否已替换、能否连通、是否就绪，由 mcpctl 判定，不在本 Schema 范围内。字段说明见 docs/services/配置字段说明.md。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["configVersion", "services"],
+  "properties": {
+    "configVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "配置结构版本。当前固定为 1；增减字段或改变语义时升级版本，并同步更新 sample、schema 与字段说明。"
+    },
+    "_comment": {
+      "type": "string",
+      "description": "给人看的说明；程序读取时必须忽略。"
+    },
+    "services": {
+      "$ref": "#/definitions/services"
+    },
+    "_hints": {
+      "type": "object",
+      "description": "字段路径到中文说明的映射，给人看；程序读取时必须忽略。",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "definitions": {
+    "baseUrl": {
+      "type": "string",
+      "pattern": "^(?:https?://.*)?$",
+      "description": "http 或 https 地址，允许空串（服务未启用或尚未填写时）。占位符与是否就绪由 mcpctl 判定。"
+    },
+    "instances": {
+      "type": "array",
+      "description": "多实例列表。configVersion 1 不约定元素结构，程序不解析该字段；单实例留空数组。"
+    },
+    "services": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gerrit", "github", "jenkins", "atlassian"],
+      "properties": {
+        "gerrit": {
+          "$ref": "#/definitions/gerrit"
+        },
+        "github": {
+          "$ref": "#/definitions/github"
+        },
+        "jenkins": {
+          "$ref": "#/definitions/jenkins"
+        },
+        "atlassian": {
+          "$ref": "#/definitions/atlassian"
+        }
+      }
+    },
+    "gerrit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "baseUrl", "username", "httpPassword"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "baseUrl": {
+          "$ref": "#/definitions/baseUrl"
+        },
+        "instanceName": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
+        },
+        "httpPassword": {
+          "type": "string"
+        },
+        "instances": {
+          "$ref": "#/definitions/instances"
+        }
+      }
+    },
+    "github": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "baseUrl", "pat"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "baseUrl": {
+          "$ref": "#/definitions/baseUrl"
+        },
+        "pat": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        }
+      }
+    },
+    "jenkins": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "baseUrl", "username", "apiToken"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "baseUrl": {
+          "$ref": "#/definitions/baseUrl"
+        },
+        "username": {
+          "type": "string"
+        },
+        "apiToken": {
+          "type": "string"
+        },
+        "readOnly": {
+          "type": "boolean",
+          "default": true
+        },
+        "instances": {
+          "$ref": "#/definitions/instances"
+        }
+      }
+    },
+    "atlassian": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "deployment", "jiraBaseUrl", "confluenceBaseUrl", "personalAccessToken"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "deployment": {
+          "type": "string",
+          "enum": ["cloud", "server"],
+          "description": "cloud：邮箱 + API Token；server（Server/Data Center）：Personal Access Token，email 可留空。"
+        },
+        "jiraBaseUrl": {
+          "$ref": "#/definitions/baseUrl"
+        },
+        "confluenceBaseUrl": {
+          "$ref": "#/definitions/baseUrl"
+        },
+        "email": {
+          "type": "string"
+        },
+        "personalAccessToken": {
+          "type": "string"
+        },
+        "projectScope": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "spaceScope": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          },
+          "deployment": {
+            "const": "cloud"
+          }
+        },
+        "required": ["enabled", "deployment"]
+      },
+      "then": {
+        "required": ["email"],
+        "properties": {
+          "email": {
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}
