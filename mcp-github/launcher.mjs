@@ -1,8 +1,15 @@
-// Launcher for the official GitHub MCP server (stdio).
-// Located via import.meta.url so the whole MCP tree stays relocatable.
-// Reads .env (GITHUB_PAT -> GITHUB_PERSONAL_ACCESS_TOKEN, plus optional
-// GITHUB_BASE_URL / GITHUB_SCOPE) and spawns bin/github-mcp-server.exe
-// with stdio passed through unchanged. Never holds the token itself.
+// GitHub 官方 MCP server（stdio）本地启动器（模型一：由 Host 按需拉起，本进程生命周期完全由 Host 管理）。
+//
+// 配置来源：仓库根统一配置 mcp.config.json 的 services.github 配置段。
+//   路径优先取环境变量 MCP_SUITE_CONFIG（绝对路径），未设置时回退到 <本服务目录>/../mcp.config.json。
+// 字段映射：
+//   pat     -> GITHUB_PERSONAL_ACCESS_TOKEN（官方服务器读取的变量名）
+//   baseUrl -> GITHUB_HOST（官方服务器的 API 主机；填 https://github.com 时自动改写为 https://api.github.com，
+//               GitHub Enterprise 填 API 地址后原样传入）
+//   scope   仅作记录：官方服务器没有对应的限定参数，实际可见范围由令牌权限决定。
+//
+// 约束：stdout 只留给 MCP 协议，诊断信息一律写 stderr；任何输出不得包含令牌明文；
+// 占位符（<...> 形态）或空值视为未填写，拒绝启动（与 mcpctl 配置向导的就绪判定一致）。
 import { readFileSync, existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -10,51 +17,94 @@ import path from "node:path";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const exe = path.join(here, "bin", "github-mcp-server.exe");
-const envPath = path.join(here, ".env");
+const TAG = "[github-launcher]";
+const KEY = "github";
+// 字段的中文名，与 scripts/lib/config-wizard.ps1 的字段目录保持一致
+const LABELS = { enabled: "是否启用 GitHub", baseUrl: "GitHub 地址（GitHub Enterprise 填 API 地址）", pat: "个人访问令牌（PAT）" };
 
-if (!existsSync(exe)) {
-  console.error(`[github-launcher] 二进制缺失：${exe}`);
-  console.error("[github-launcher] 下一步：运行 mcp-github/setup-github-mcp.ps1 下载锁定版本二进制后重试");
-  process.exit(1);
-}
-if (!existsSync(envPath)) {
-  console.error(`[github-launcher] 本地配置缺失：${envPath}`);
-  console.error("[github-launcher] 下一步：复制 .env.template 为 .env 并填写 GITHUB_PAT 后重试（该文件已被 .gitignore 排除，不会入库）");
+function fail(message) {
+  console.error(`${TAG} ${message}`);
   process.exit(1);
 }
 
-const env = { ...process.env };
 const isPlaceholder = (v) => /^\s*<.*>\s*$/.test(v);
-for (const raw of readFileSync(envPath, "utf8").split(/\r?\n/)) {
-  const line = raw.trim();
-  if (!line || line.startsWith("#") || !line.includes("=")) continue;
-  const eq = line.indexOf("=");
-  const key = line.slice(0, eq).trim();
-  let value = line.slice(eq + 1).trim();
-  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-    value = value.slice(1, -1);
+const text = (v) => (v === undefined || v === null ? "" : String(v)).trim();
+
+// 读取统一配置并返回 services.github 配置段；任何问题都以中文说明退出
+function loadSection() {
+  const override = text(process.env.MCP_SUITE_CONFIG);
+  const configPath = override ? path.resolve(override) : path.join(here, "..", "mcp.config.json");
+  if (!existsSync(configPath)) {
+    fail(`统一配置文件不存在：${configPath}\n下一步：运行 mcpctl 配置向导（scripts/mcpctl.ps1 菜单 4）从模板生成 mcp.config.json 并填写。`);
   }
-  // <占位符> 形态视为未填写（与配置向导的就绪判定一致），不注入
-  if (key && !isPlaceholder(value)) env[key] = value;
+  let doc;
+  try {
+    doc = JSON.parse(readFileSync(configPath, "utf8"));
+  } catch (err) {
+    // 不回显解析器的原始信息（可能夹带配置内容），只给出出错位置
+    const raw = String((err && err.message) || "");
+    const lc = /line (\d+) column (\d+)/.exec(raw);
+    const pos = /position (\d+)/.exec(raw);
+    const where = lc ? `（第 ${lc[1]} 行，第 ${lc[2]} 列附近）` : pos ? `（第 ${pos[1]} 个字符附近）` : "";
+    fail(`统一配置不是合法 JSON：${configPath}${where}。请检查引号、逗号与括号是否成对。`);
+  }
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
+    fail(`统一配置的顶层必须是 JSON 对象：${configPath}`);
+  }
+  if (doc.configVersion !== 1) {
+    fail(`统一配置的 configVersion 不受支持：${configPath}（当前仅支持 1）`);
+  }
+  const services = doc.services;
+  if (!services || typeof services !== "object" || Array.isArray(services)) {
+    fail(`统一配置缺少 services 配置段，或该段不是对象：${configPath}（请对照 mcp.config.sample.json 补全）`);
+  }
+  const section = services[KEY];
+  if (!section || typeof section !== "object" || Array.isArray(section)) {
+    fail(`统一配置缺少 services.${KEY} 配置段：${configPath}（请对照 mcp.config.sample.json 补全）`);
+  }
+  return { section, configPath };
 }
 
-if (!env.GITHUB_PAT || isPlaceholder(env.GITHUB_PAT)) {
-  console.error("[github-launcher] .env 中 GITHUB_PAT 为空或仍是占位符，请填写真实令牌后重试");
-  process.exit(1);
+const { section } = loadSection();
+if (section.enabled !== true) {
+  fail(`GitHub 已在统一配置中禁用（services.${KEY}.enabled 不是 true），不启动。`);
 }
-// 官方二进制读取的是 GITHUB_PERSONAL_ACCESS_TOKEN，这里做一次映射，避免模板字段与官方变量耦合。
-env.GITHUB_PERSONAL_ACCESS_TOKEN = env.GITHUB_PAT;
-if (env.GITHUB_BASE_URL && !env.GITHUB_HOST && !isPlaceholder(env.GITHUB_BASE_URL)) {
-  env.GITHUB_HOST = env.GITHUB_BASE_URL;
+const baseUrl = text(section.baseUrl).replace(/\/+$/, "");
+const pat = text(section.pat);
+if (!baseUrl || isPlaceholder(baseUrl)) {
+  fail(`统一配置 services.${KEY}.baseUrl（${LABELS.baseUrl}）未填写或仍是占位符，请填写后重试。`);
+}
+if (!/^https?:\/\//i.test(baseUrl)) {
+  fail(`统一配置 services.${KEY}.baseUrl（${LABELS.baseUrl}）格式不正确：需以 http:// 或 https:// 开头。`);
+}
+if (!pat || isPlaceholder(pat)) {
+  fail(`统一配置 services.${KEY}.pat（${LABELS.pat}）未填写或仍是占位符，请填写后重试。`);
+}
+if (!existsSync(exe)) {
+  fail(`二进制缺失：${exe}\n下一步：联网运行 mcp-github/setup-github-mcp.ps1 下载锁定版本的官方二进制后重试。`);
 }
 
-// v2.x requires an explicit subcommand; default to the stdio server.
+// 官方服务器用 GITHUB_HOST 表示 API 主机；不设置时默认 api.github.com。
+// 模板参考值是 https://github.com，这里改写为 API 地址，避免把站点地址当成 API 主机。
+let apiHost = baseUrl;
+try {
+  const u = new URL(baseUrl);
+  if ((u.hostname.toLowerCase() === "github.com" || u.hostname.toLowerCase() === "www.github.com") && (u.pathname === "/" || u.pathname === "")) {
+    apiHost = "https://api.github.com";
+  }
+} catch {
+  fail(`统一配置 services.${KEY}.baseUrl（${LABELS.baseUrl}）无法解析为合法地址。`);
+}
+
+const env = { ...process.env, GITHUB_PERSONAL_ACCESS_TOKEN: pat, GITHUB_HOST: apiHost };
+
+// v2.x 必须显式给出子命令；未传参时默认 stdio 服务器。
 const args = process.argv.slice(2);
 if (args.length === 0) args.push("stdio");
 
 const child = spawn(exe, args, { env, stdio: "inherit" });
 child.on("error", (err) => {
-  console.error(`[github-launcher] 启动失败：${err.message}`);
+  console.error(`${TAG} 启动失败：${err.message}`);
   process.exit(1);
 });
 child.on("exit", (code) => process.exit(code ?? 0));

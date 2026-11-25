@@ -1,22 +1,22 @@
 # -*- coding: utf-8 -*-
 """mcp-atlassian 本地启动器（模型一：由 Host 按需 stdio 拉起，本进程生命周期完全由 Host 管理）。
 
-用法（Host 的 MCP 条目）：
-    command: <仓库>/mcp-atlassian/venv/Scripts/python.exe
-    args:    ["<仓库>/mcp-atlassian/launcher.py"]
+配置来源：仓库根统一配置 mcp.config.json 的 services.atlassian 配置段。
+    路径优先取环境变量 MCP_SUITE_CONFIG（绝对路径），未设置时回退到 <本服务目录>/../mcp.config.json。
 
-职责：
-    1. 读取同目录 atlassian_config.json（本地真实配置，已被 .gitignore 排除，绝不入库）；
-    2. 映射为 mcp-atlassian 的环境变量（Jira 与 Confluence 命名空间独立）：
-           jiraBaseUrl        -> JIRA_URL
-           confluenceBaseUrl  -> CONFLUENCE_URL
-           personalAccessToken-> JIRA_PERSONAL_TOKEN + CONFLUENCE_PERSONAL_TOKEN
-           projectScope[]     -> JIRA_PROJECTS_FILTER（逗号分隔）
-           spaceScope[]       -> CONFLUENCE_SPACES_FILTER（逗号分隔）
-    3. 进程内启动上游 stdio 主循环（不产生子进程，Host 结束本进程即完整退出）。
+字段映射（环境变量名以 mcp-atlassian==0.23.1 为准；升级上游后必须重新核对其 README 与 config.py）：
+    deployment          -> cloud：登录邮箱 + API Token；server：个人访问令牌（PAT）
+    jiraBaseUrl         -> JIRA_URL
+    confluenceBaseUrl   -> CONFLUENCE_URL
+    email               -> JIRA_USERNAME / CONFLUENCE_USERNAME（仅 cloud）
+    personalAccessToken -> cloud：JIRA_API_TOKEN + CONFLUENCE_API_TOKEN
+                           server：JIRA_PERSONAL_TOKEN + CONFLUENCE_PERSONAL_TOKEN
+    projectScope[]      -> JIRA_PROJECTS_FILTER（逗号分隔）
+    spaceScope[]        -> CONFLUENCE_SPACES_FILTER（逗号分隔）
 
-安全约束：占位符（<...> 形态）视为未填写，直接拒绝启动（与配置向导的就绪判定一致）；
-任何输出不得包含明文凭证。
+启动方式：进程内调用上游 stdio 主循环（不产生子进程，Host 结束本进程即完整退出）。
+安全约束：stdout 只留给 MCP 协议，诊断信息一律写 stderr；任何输出不得包含凭证明文；
+占位符（<...> 形态）或空值视为未填写，直接拒绝启动（与 mcpctl 配置向导的就绪判定一致）。
 """
 
 import json
@@ -25,11 +25,22 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-CONFIG_PATH = Path(os.environ.get("MCP_ATLASSIAN_CONFIG_FILE", HERE / "atlassian_config.json"))
+KEY = "atlassian"
+TAG = "[atlassian-launcher]"
+DEPLOYMENTS = ("cloud", "server")
+# 字段的中文名，与 scripts/lib/config-wizard.ps1 的字段目录保持一致
+LABELS = {
+    "enabled": "是否启用 Atlassian（Jira + Confluence）",
+    "deployment": "部署类型（cloud / server）",
+    "jiraBaseUrl": "Jira 地址",
+    "confluenceBaseUrl": "Confluence 地址",
+    "email": "登录邮箱",
+    "personalAccessToken": "访问令牌（Cloud 填 API Token，Server 填 PAT）",
+}
 
 
 def fail(message: str) -> None:
-    print(f"[atlassian-launcher] {message}", file=sys.stderr)
+    print(f"{TAG} {message}", file=sys.stderr)
     sys.exit(1)
 
 
@@ -38,44 +49,101 @@ def is_placeholder(value: str) -> bool:
     return v.startswith("<") and v.endswith(">")
 
 
+def text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value).strip()
+
+
 def as_csv(values) -> str:
-    parts = [str(v).strip() for v in values if str(v).strip()]
-    return ",".join(parts)
+    if isinstance(values, str):
+        values = [values]
+    if not isinstance(values, (list, tuple)):
+        return ""
+    return ",".join(str(v).strip() for v in values if str(v).strip())
+
+
+def load_section() -> dict:
+    override = os.environ.get("MCP_SUITE_CONFIG", "").strip()
+    config_path = Path(override) if override else HERE.parent / "mcp.config.json"
+    if not config_path.is_file():
+        fail(
+            f"统一配置文件不存在：{config_path}\n"
+            "下一步：运行 mcpctl 配置向导（scripts/mcpctl.ps1 菜单 4）从模板生成 mcp.config.json 并填写。"
+        )
+    try:
+        raw = config_path.read_text(encoding="utf-8-sig")
+    except OSError as err:
+        fail(f"统一配置文件读取失败：{config_path}（{type(err).__name__}）")
+    try:
+        doc = json.loads(raw)
+    except ValueError as err:
+        # 只给出行列号，不回显解析器原文（可能夹带配置内容）
+        fail(
+            f"统一配置不是合法 JSON：{config_path}（第 {getattr(err, 'lineno', '?')} 行，"
+            f"第 {getattr(err, 'colno', '?')} 列附近）。请检查引号、逗号与括号是否成对。"
+        )
+    if not isinstance(doc, dict):
+        fail(f"统一配置的顶层必须是 JSON 对象：{config_path}")
+    if doc.get("configVersion") != 1:
+        fail(f"统一配置的 configVersion 不受支持：{config_path}（当前仅支持 1）")
+    services = doc.get("services")
+    if not isinstance(services, dict):
+        fail(f"统一配置缺少 services 配置段，或该段不是对象：{config_path}（请对照 mcp.config.sample.json 补全）")
+    section = services.get(KEY)
+    if not isinstance(section, dict):
+        fail(f"统一配置缺少 services.{KEY} 配置段：{config_path}（请对照 mcp.config.sample.json 补全）")
+    return section
+
+
+def require_filled(section: dict, name: str, url: bool = False) -> str:
+    value = text(section.get(name))
+    if not value or is_placeholder(value):
+        fail(f"统一配置 services.{KEY}.{name}（{LABELS[name]}）未填写或仍是占位符，请填写后重试。")
+    if url and not value.lower().startswith(("http://", "https://")):
+        fail(f"统一配置 services.{KEY}.{name}（{LABELS[name]}）格式不正确：需以 http:// 或 https:// 开头。")
+    return value
 
 
 def main() -> None:
-    if not CONFIG_PATH.exists():
-        fail(
-            f"本地配置缺失：{CONFIG_PATH}\n"
-            "下一步：复制 atlassian_config.sample.json 为 atlassian_config.json 并填写后重试"
-            "（该文件已被 .gitignore 排除，不会入库）"
-        )
-    try:
-        cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    except (ValueError, OSError) as err:
-        fail(f"配置解析失败：{err}")
+    # 管道 / 重定向下按 UTF-8 输出中文诊断（否则 Windows 默认用本地代码页，Host 侧会乱码）
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+    section = load_section()
+    if section.get("enabled") is not True:
+        fail(f"Atlassian（Jira + Confluence）已在统一配置中禁用（services.{KEY}.enabled 不是 true），不启动。")
 
-    jira_url = str(cfg.get("jiraBaseUrl", "") or "").strip()
-    conf_url = str(cfg.get("confluenceBaseUrl", "") or "").strip()
-    token = str(cfg.get("personalAccessToken", "") or "").strip()
-
-    if not jira_url or is_placeholder(jira_url):
-        fail("atlassian_config.json 中 jiraBaseUrl 为空或仍是占位符，请填写真实实例地址后重试")
-    if not conf_url or is_placeholder(conf_url):
-        fail("atlassian_config.json 中 confluenceBaseUrl 为空或仍是占位符，请填写真实实例地址后重试")
-    if not token or is_placeholder(token):
-        fail("atlassian_config.json 中 personalAccessToken 为空或仍是占位符，请填写真实令牌后重试")
+    deployment = require_filled(section, "deployment")
+    if deployment not in DEPLOYMENTS:
+        fail(f"统一配置 services.{KEY}.deployment（{LABELS['deployment']}）只能是 cloud 或 server，当前无法识别。")
+    jira_url = require_filled(section, "jiraBaseUrl", url=True).rstrip("/")
+    conf_url = require_filled(section, "confluenceBaseUrl", url=True).rstrip("/")
+    token = require_filled(section, "personalAccessToken")
 
     os.environ["JIRA_URL"] = jira_url
     os.environ["CONFLUENCE_URL"] = conf_url
-    os.environ["JIRA_PERSONAL_TOKEN"] = token
-    os.environ["CONFLUENCE_PERSONAL_TOKEN"] = token
-    projects = as_csv(cfg.get("projectScope", []) or [])
-    spaces = as_csv(cfg.get("spaceScope", []) or [])
-    if projects:
-        os.environ["JIRA_PROJECTS_FILTER"] = projects
-    if spaces:
-        os.environ["CONFLUENCE_SPACES_FILTER"] = spaces
+    if deployment == "cloud":
+        email = require_filled(section, "email")
+        os.environ["JIRA_USERNAME"] = email
+        os.environ["CONFLUENCE_USERNAME"] = email
+        os.environ["JIRA_API_TOKEN"] = token
+        os.environ["CONFLUENCE_API_TOKEN"] = token
+        # 同一进程里不残留另一种部署类型的变量，避免切换部署类型后互相干扰
+        for name in ("JIRA_PERSONAL_TOKEN", "CONFLUENCE_PERSONAL_TOKEN"):
+            os.environ.pop(name, None)
+    else:
+        os.environ["JIRA_PERSONAL_TOKEN"] = token
+        os.environ["CONFLUENCE_PERSONAL_TOKEN"] = token
+        for name in ("JIRA_USERNAME", "CONFLUENCE_USERNAME", "JIRA_API_TOKEN", "CONFLUENCE_API_TOKEN"):
+            os.environ.pop(name, None)
+
+    projects = as_csv(section.get("projectScope"))
+    spaces = as_csv(section.get("spaceScope"))
+    os.environ["JIRA_PROJECTS_FILTER"] = projects
+    os.environ["CONFLUENCE_SPACES_FILTER"] = spaces
 
     try:
         from mcp_atlassian import main as upstream_main

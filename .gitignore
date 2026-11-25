@@ -15,6 +15,8 @@ logs/
 *.log
 run.pid
 *.pid
+# 启动器运行期生成的临时文件（如 Gerrit 上游配置，含凭证，退出后自动删除）
+var/
 
 # ===== 虚拟环境 / 依赖目录（不入库，由 Bootstrap 重建）=====
 .venv/
