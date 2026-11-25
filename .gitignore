@@ -7,6 +7,8 @@
 *_config.json
 *_config.local.*
 !*_config.sample.json
+# 统一配置：真实配置含凭证，永不入库；模板与 Schema 随仓库分发
+/mcp.config.json
 
 # ===== 运行时产物 =====
 logs/
