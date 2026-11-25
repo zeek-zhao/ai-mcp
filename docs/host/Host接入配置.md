@@ -3,7 +3,7 @@
 | 文档编号 | DOC-HOST-001 |
 |---|---|
 | 文档名称 | Host 接入配置 |
-| 版本 | v0.2.0 |
+| 版本 | v0.3.0 |
 | 状态 | 生效（A） |
 | 密级 | 内部 |
 | 作者 | zeek.zhao |
@@ -30,18 +30,18 @@
 {
   "mcpServers": {
     "gerrit": {
-      "command": "<M5 回填：mcp-gerrit 仓库内 venv 的 python.exe 路径>",
-      "args": ["<M5 回填：gerrit-mcp-server 入口参数>", "mcp-gerrit/gerrit_config.json"],
+      "command": "<仓库路径>/mcp-gerrit/venv/Scripts/gerrit-mcp-server.exe（先运行 scripts/bootstrap.ps1 初始化 venv）",
+      "args": ["--config", "<仓库路径>/mcp-gerrit/gerrit_config.json", "stdio"],
       "env": {}
     },
     "github": {
-      "command": "<node.exe 路径>",
+      "command": "node（或 node.exe 绝对路径；首次先联网运行 mcp-github/setup-github-mcp.ps1 获取 v2.1.0 二进制）",
       "args": ["<仓库路径>/mcp-github/launcher.mjs"],
       "env": {}
     },
     "jenkins": {
-      "command": "<M7 回填：node.exe 路径>",
-      "args": ["<仓库路径>/mcp-jenkins/launcher.mjs"],
+      "command": "node（或 node.exe 绝对路径）",
+      "args": ["<仓库路径>/mcp-jenkins/launcher.mjs（先运行 scripts/bootstrap.ps1 安装依赖）"],
       "env": {}
     },
     "atlassian": {
@@ -74,3 +74,4 @@
 |---|---|---|---|---|
 | v0.1.0 | 2026-11-25 | zeek.zhao | 建立 Host 接入配置骨架 | 项目初始化 |
 | v0.2.0 | 2026-11-25 | zeek.zhao | 升级为模型一可用结构模板：Host 直接拉起、凭证注入规则、遗留进程验证项 | DEV-003/004，ADR-006，Issue #20 |
+| v0.3.0 | 2026-11-25 | zeek.zhao | 四条目 command/args 按 StartCommand 回填后的最终形态更新（gerrit venv exe+--config+stdio、node+launcher、venv python+launcher.py） | P0-1/P0-3，DEV-008/009，Issue #39 |
