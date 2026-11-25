@@ -1,0 +1,7 @@
+{
+  "baseUrl": "<https://gerrit.example.com>",
+  "authMethod": "http-password",
+  "username": "<your-username>",
+  "credential": "<your-credential-or-token>",
+  "instances": []
+}

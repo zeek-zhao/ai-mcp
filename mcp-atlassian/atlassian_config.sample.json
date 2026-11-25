@@ -1,0 +1,7 @@
+{
+  "jiraBaseUrl": "<https://jira.example.com>",
+  "confluenceBaseUrl": "<https://confluence.example.com>",
+  "personalAccessToken": "<your-pat>",
+  "projectScope": [],
+  "spaceScope": []
+}

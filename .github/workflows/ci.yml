@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 模板完整性检查
+        run: |
+          set -e
+          # 各服务模板必须存在
+          test -f mcp-gerrit/gerrit_config.sample.json || echo "::warning::mcp-gerrit 模板待 M5 补齐"
+          test -f mcp-github/.env.template || echo "::warning::mcp-github 模板待 M6 补齐"
+          test -f mcp-jenkins/jenkins_config.sample.json || echo "::warning::mcp-jenkins 模板待 M7 补齐"
+          test -f mcp-atlassian/atlassian_config.sample.json || echo "::warning::mcp-atlassian 模板待 M8 补齐"
+
+          # 真实本地配置不得被 Git 跟踪
+          if git ls-files | grep -E '(^|/)(gerrit_config\.json|jenkins_config\.json|atlassian_config\.json|\.env)$'; then
+            echo "::error::检测到真实本地配置被跟踪，请移出版本库并加入 .gitignore"
+            exit 1
+          fi
+
+      - name: 禁止跟踪依赖目录与运行时产物
+        run: |
+          if git ls-files | grep -E '(node_modules/|\.venv/|venv/|logs/|\.pid$|\.log$)'; then
+            echo "::error::检测到依赖目录或运行时产物被跟踪"
+            exit 1
+          fi
+
+      - name: PowerShell 脚本语法解析（若 pwsh 可用）
+        run: |
+          if command -v pwsh >/dev/null 2>&1; then
+            for f in $(find scripts -name '*.ps1'); do
+              pwsh -NoProfile -Command "\$null = [System.Management.Automation.Language.Parser]::ParseFile('$f', [ref]\$null, [ref]\$errs); if (\$errs.Count) { \$errs | ForEach-Object { Write-Host \$_.Message }; exit 1 }"
+            done
+          else
+            echo "::notice::当前 Runner 无 pwsh，跳过 PowerShell 语法解析"
+          fi
+
+      - name: 密钥扫描
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_ENABLE_COMMENTS: false
