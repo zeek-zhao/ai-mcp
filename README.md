@@ -1,4 +1,4 @@
-# ai-mcp · 本地 MCP 套件
+﻿# ai-mcp · 本地 MCP 套件
 
 > 在 Windows 本地运行的一组独立 MCP Server，统一对接 Gerrit、GitHub、Jenkins、Atlassian（Jira + Confluence），由全中文总控脚本按需启停。
 
@@ -65,8 +65,8 @@ ai-mcp/
 
 ## 四、当前阶段
 
-- 阶段：**M0–M4 已完成**（文档体系、协作规范、CI 骨架，以及总控注册表、配置向导、启停与状态、依赖初始化 Bootstrap 均就位）。
-- 下一阶段：M5（Gerrit 服务接入与连通测试）。按 `docs/operations/任务清单.md` 与 `ai/实现提示词.md` 逐里程碑推进。
+- 阶段：**M0–M8 已完成**（文档体系、协作规范、CI 骨架、总控治理工具，以及四个服务接入：Gerrit 已实测连通，GitHub/Jenkins/Atlassian 已就位、连通测试待执行）。
+- 下一阶段：M9（登录预检与环境自愈）。按 `docs/operations/任务清单.md` 与 `ai/实现提示词.md` 逐里程碑推进。
 
 ## 五、安全提示
 
