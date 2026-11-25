@@ -1,0 +1,4 @@
+# Atlassian MCP 服务依赖锁定（mcp-atlassian 单进程同时提供 Jira 与 Confluence 两套工具）
+# 安装方式：scripts/bootstrap.ps1（或在服务目录内 venv 执行 pip install -r requirements.txt）
+# 注意：0.x 版本之间 API 与工具集差异较大，升级前须重新验证。
+mcp-atlassian==0.23.1
