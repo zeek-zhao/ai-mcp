@@ -714,3 +714,29 @@ function Get-McpSuiteConfigHints {
     }
     return $result
 }
+
+<#
+.SYNOPSIS
+    获取模板 mcp.config.sample.json 中某服务配置段的参考值（供配置向导展示）。
+
+.PARAMETER Key
+    配置段名（注册表 ConfigKey），不区分大小写。
+
+.OUTPUTS
+    [ordered]@{}：字段名 → 参考值；模板缺失、不可解析或没有该段时返回空表（不抛错）。
+#>
+function Get-McpSuiteConfigReference {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Key)
+
+    $canon = Resolve-McpSuiteConfigKey -Key $Key
+    if (-not $canon) {
+        throw ('未知的配置段：{0}（可用：{1}）' -f $Key, ((Get-McpSuiteServiceKeys) -join ' / '))
+    }
+    $result = [ordered]@{}
+    $section = Get-McpSuiteSampleSection -Key $canon
+    if ($null -ne $section) {
+        foreach ($k in $section.Keys) { $result["$k"] = $section[$k] }
+    }
+    return $result
+}

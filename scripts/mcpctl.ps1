@@ -4,11 +4,11 @@
     mcpctl 总控主菜单（传输模型整改后：Host 拉起 stdio，见 ADR-006）。
 
 .DESCRIPTION
-    全中文交互菜单。模型一下 mcpctl 不再后台托管服务进程，只做治理：
+    全中文交互菜单。模型一：mcpctl 不再后台托管服务进程，只做治理：
       1. 服务诊断与自检（启动命令 / 配置 / 依赖环境 + 可选 MCP 握手探活）
       2. 清理遗留进程（二次确认，taskkill /F /T 强杀进程树）
       3. 查看服务状态（配置就绪 / 依赖环境 / 启动命令 / 遗留进程 / 日志位置）
-      4. 配置入口（统一配置 mcp.config.json：就绪状态与连通测试；逐字段录入随 T-CFG-04 提供）
+      4. 配置向导（统一配置 mcp.config.json：逐字段录入、从旧配置导入、连通性测试）
       5. 初始化运行环境 Bootstrap（M4：检查 / 初始化 / 重建）
       6. 导出 Host 配置（stdio 配置片段写入仓库外本地文件，不含明文凭证）
       7. 登录预检（占位，M9 按“登录预检与环境自愈”重定义后提供）
@@ -18,7 +18,7 @@
     运行：pwsh / powershell 下执行 scripts\mcpctl.ps1。
 #>
 
-# 加载核心库（注册表 / 统一配置 / 配置入口 / 诊断与遗留进程治理 / Bootstrap）
+# 加载核心库（注册表 / 统一配置 / 配置向导 / 诊断与遗留进程治理 / Bootstrap）
 . (Join-Path -Path $PSScriptRoot -ChildPath 'lib\service-utils.ps1')
 . (Join-Path -Path $PSScriptRoot -ChildPath 'lib\config-wizard.ps1')
 . (Join-Path -Path $PSScriptRoot -ChildPath 'bootstrap.ps1')
@@ -33,7 +33,7 @@ function Show-McpMenu {
     Write-Host '  [1] 服务诊断与自检（含握手探活入口）'
     Write-Host '  [2] 清理遗留进程（二次确认强杀）'
     Write-Host '  [3] 查看服务状态'
-    Write-Host '  [4] 配置入口（统一配置 mcp.config.json）'
+    Write-Host '  [4] 配置向导（统一配置 mcp.config.json）'
     Write-Host '  [5] 初始化运行环境（Bootstrap：检查 / 初始化 / 重建）'
     Write-Host '  [6] 导出 Host 配置（stdio 片段，本地文件）'
     Write-Host '  [7] 登录预检 —— 待 M9 提供'
@@ -68,7 +68,7 @@ function Invoke-McpHostConfigExport {
         # env 不导出（凭证只保存在统一配置文件，绝不写明文到导出文件）
         $stateText = if ($ready.Ready) { '已就绪' }
             elseif ($ready.State -eq '已禁用') { '已禁用' }
-            else { '未就绪，请先编辑 mcp.config.json' }
+            else { '未就绪，请先运行配置向导（菜单 4）' }
         $entry['note'] = ("配置来源：{0}（{1}；含凭证，仅保存在该本地文件）" -f (Get-McpSuiteConfigPath), $stateText)
         $servers[$svc.Id] = $entry
     }
@@ -99,6 +99,11 @@ function Invoke-McpctlMenu {
     while ($true) {
         Show-McpMenu
         $choice = Read-Host '请选择操作 [0-7]'
+        if ($null -eq $choice) {
+            # 标准输入已结束（例如被脚本调用且输入耗尽）：Read-Host 返回 $null，直接退出，避免菜单空转
+            Write-Host '输入已关闭，退出 mcpctl。'
+            return
+        }
         switch ($choice) {
             '1' {
                 Show-McpServiceDiagnostics
@@ -111,9 +116,11 @@ function Invoke-McpctlMenu {
             }
             '2' {
                 $scope = Read-Host '清理范围：[1] 全部服务 [2] 指定服务（输入代号 A-D）'
-                if ($scope -eq '2') {
+                if ($null -eq $scope) { Write-Host '输入已关闭，未执行清理。' }
+                elseif ($scope -eq '2') {
                     $c = Read-Host '请输入服务代号'
-                    Invoke-McpLeftoverCleanup -Code $c | Out-Null
+                    if ($null -eq $c) { Write-Host '输入已关闭，未执行清理。' }
+                    else { Invoke-McpLeftoverCleanup -Code $c | Out-Null }
                 }
                 else {
                     Write-Host '将对全部服务检测并清理遗留进程（强杀前逐个二次确认）。'
@@ -128,10 +135,13 @@ function Invoke-McpctlMenu {
             }
             '5' {
                 $mode = Read-Host 'Bootstrap 模式：[1] 仅检查环境 [2] 初始化缺失环境 [3] 重建环境'
-                switch ($mode) {
-                    '1' { Invoke-McpBootstrap -Check | Out-Null }
-                    '3' { Invoke-McpBootstrap -Rebuild | Out-Null }
-                    default { Invoke-McpBootstrap | Out-Null }
+                if ($null -eq $mode) { Write-Host '输入已关闭，未执行 Bootstrap。' }
+                else {
+                    switch ($mode) {
+                        '1' { Invoke-McpBootstrap -Check | Out-Null }
+                        '3' { Invoke-McpBootstrap -Rebuild | Out-Null }
+                        default { Invoke-McpBootstrap | Out-Null }
+                    }
                 }
             }
             '6' {
