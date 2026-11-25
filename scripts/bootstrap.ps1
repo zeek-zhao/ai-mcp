@@ -9,15 +9,23 @@
       - node  ：若存在 package.json 且有 package-lock.json 则 npm ci 安装锁定依赖
       - binary：仅检查本地二进制（<服务Id>.exe）是否就位
     环境目录均在 .gitignore 忽略范围内，不污染全局 Python/Node。
+    Bootstrap 只准备依赖环境，不拉起任何 MCP 服务进程
+    （服务由 Host 按需 stdio 拉起，见 ADR-006）。
 
     用法：
       scripts\bootstrap.ps1                # 初始化缺失环境（已就绪跳过）
       scripts\bootstrap.ps1 -Check         # 仅检查环境，不做任何变更
       scripts\bootstrap.ps1 -Rebuild       # 删除现有环境后重建
-      scripts\bootstrap.ps1 -ServiceCode A # 只处理指定服务
+      scripts\bootstrap.ps1 -Code A        # 只处理指定服务
 
     占位状态下（无锁定文件/二进制）流程可跑通，缺失项给出中文原因与下一步。
 #>
+
+param(
+    [switch]$Check,
+    [switch]$Rebuild,
+    [string]$Code
+)
 
 . (Join-Path -Path $PSScriptRoot -ChildPath 'lib\registry.ps1')
 . (Join-Path -Path $PSScriptRoot -ChildPath 'lib\service-utils.ps1')
@@ -103,6 +111,9 @@ function Invoke-McpBootstrap {
         $svc = Get-McpServiceByCode -Code $Code
         if (-not $svc) { throw "未知的服务代号：$Code" }
         $services = @($svc)
+    }
+    elseif ($PSBoundParameters.ContainsKey('Code')) {
+        # 传入空字符串等无效代号时按全部服务处理
     }
 
     Write-Host '=============================================='

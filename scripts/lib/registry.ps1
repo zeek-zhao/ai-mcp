@@ -27,7 +27,7 @@ function Get-McpRepoRoot {
 
 <#
 .SYNOPSIS
-    获取全局参数（含优雅停止超时、菜单语言等）。
+    获取全局参数（含进程退出等待超时、菜单语言等）。
 
 .OUTPUTS
     System.Collections.Hashtable

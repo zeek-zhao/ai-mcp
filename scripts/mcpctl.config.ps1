@@ -38,7 +38,8 @@ $script:McpCtlGlobal = @{
     # 运行日志根目录（仓库相对；.gitignore 已排除 logs/）
     LogRoot = 'logs'
 
-    # 优雅停止默认超时（秒）：通知退出后的最长等待时间，超时进入“二次确认 → 强制结束”流程（M3 使用）
+    # 进程退出等待超时（秒）：遗留进程清理（taskkill /F /T 强杀进程树）后等待进程消失的最长时间，
+    # 超时提示人工处理（模型一下 mcpctl 不启动/停止服务，见 ADR-006）
     GracefulStopTimeoutSeconds = 15
 
     # 强制结束前等待进程退出的轮询间隔（秒）

@@ -1,41 +1,43 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    mcpctl 启停与状态核心函数（M3）。
+    mcpctl 服务诊断与遗留进程治理核心函数（M3 / 传输模型整改后）。
 
 .DESCRIPTION
-    提供服务状态检测、批量启动、优雅停止、PID 管理与操作日志：
-      - 状态检测：读取 PID 文件、校验进程存在、识别僵尸 PID（进程已消失或 PID 被无关进程复用）。
-      - 启动：批量只启动“已就绪”的服务；未配置跳过并中文提示；单服务异常不阻断其余；
-        成功后写入 PID 文件并重定向日志。
-      - 优雅停止：通知退出 → 按全局超时轮询等待 → 超时二次确认 → 强制结束；成功后清理 PID。
-      - 状态表格输出：服务名、状态、PID、是否就绪、日志位置。
-      - 操作日志：logs/mcpctl-ops.log，只记事实（服务/动作/PID/结果），不含任何敏感信息。
+    传输模型（ADR-006，模型一）：MCP stdio 服务由 Host（Cursor / Claude Desktop 等）
+    按需拉起；mcpctl 不再后台托管服务进程，也不再重定向服务 stdout 到日志。
+    本模块只做四件事：
+      - 启动命令诊断：StartCommand 是否回填、可执行文件是否存在、配置是否就绪、
+        依赖环境（venv / node_modules / 本地二进制）是否已初始化，输出中文诊断表。
+      - MCP 握手探活：以 stdio 短时拉起服务进程，发送 initialize 请求并等待响应，
+        超时或异常退出即报告失败；探活进程不写 PID 文件、退出时强制清理进程树。
+      - 遗留进程识别与清理：检测残留 PID 文件指向的进程（已消失 / 被复用 / 仍在运行），
+        清理动作为二次确认后的 taskkill /F /T 强杀进程树 + 删除 PID 文件（直接强杀，无缓冲退出流程）。
+      - 状态表格：代号 / 服务 / 配置就绪 / 依赖环境 / 启动命令已回填 / 遗留进程 / 日志位置。
 
     用法：
         . (Join-Path $PSScriptRoot 'service-utils.ps1')
-        Get-McpServiceStatus            # 全部服务状态
-        Start-McpServices               # 批量启动就绪服务
-        Stop-McpServices -Code C        # 停止单个服务
-        Show-McpServiceStatus           # 表格输出
+        Get-McpServiceStatus                     # 全部服务状态（遗留进程语义）
+        Show-McpServiceStatus                    # 表格输出
+        Get-McpServiceDiagnostics                # 诊断表
+        Invoke-McpHandshakeProbe -Code A         # 单服务握手探活
+        Invoke-McpLeftoverCleanup                # 清理遗留进程（交互二次确认）
 
-.NOTES
-    说明：Windows 下“通知退出”以 taskkill（不带 /F）实现，对无窗口进程通常无效；
-    M5–M8 各服务接入时可按技术栈定制真正的优雅退出（如 Jenkins HTTP 关闭接口）。
-    本文件不实现 Bootstrap、常驻管理与真实服务命令（StartCommand 仍为注册表占位）。
+    操作日志：logs/mcpctl-ops.log，只记事实（服务/动作/结果），不含任何敏感信息。
+    本文件不实现 Bootstrap、登录预检与真实服务命令（StartCommand 仍为注册表占位）。
 #>
 
-# 加载注册表（服务清单、全局超时参数）与配置向导的就绪判定
+# 加载注册表（服务清单）与配置向导的就绪判定
 . (Join-Path -Path $PSScriptRoot -ChildPath 'registry.ps1')
 . (Join-Path -Path $PSScriptRoot -ChildPath 'config-wizard.ps1')
 
-# 服务运行状态常量
+# 遗留进程状态常量（模型一下：PID 文件只应来自历史遗留或外部拉起，mcpctl 不再写入）
 $script:McpServiceState = @{
-    Stopped   = '未运行'
-    Running   = '运行中'
-    Zombie    = '僵尸PID（进程已消失，需清理）'
-    PidReused = 'PID被复用（进程非本服务，需清理PID文件）'
-    Unknown   = '未知'
+    NoPid           = '无遗留进程'
+    LeftoverGone    = '遗留（进程已消失，可清理 PID 文件）'
+    LeftoverReused  = '遗留（PID 已被其他程序占用，可清理 PID 文件）'
+    LeftoverRunning = '遗留（进程仍在运行）'
+    Unknown         = '未知'
 }
 
 # ---------------------------------------------------------------------------
@@ -59,7 +61,7 @@ function Write-McpOpsLog {
 }
 
 # ---------------------------------------------------------------------------
-# PID 与进程检测
+# PID 与进程检测（遗留进程识别的基础）
 # ---------------------------------------------------------------------------
 
 <#
@@ -105,14 +107,19 @@ function Test-McpProcessOwnership {
 
 <#
 .SYNOPSIS
-    计算单个服务运行状态（含僵尸 PID 识别）。
+    计算单个服务遗留进程状态。
 
 .DESCRIPTION
-    状态判定规则：
-      - 无 PID 文件 → Stopped；
-      - PID 文件存在但进程不存在 → Zombie（提示清理 PID 文件）；
-      - 进程存在但命令行/路径不含服务目录 → PidReused（PID 被无关进程复用，提示清理 PID 文件，绝不误杀）；
-      - 进程存在且属于本服务 → Running。
+    模型一下 mcpctl 不再拉起服务，PID 文件只可能来自：
+      - 历史版本 mcpctl 托管残留；
+      - 或用户手工记录。
+    判定规则：
+      - 无 PID 文件 → NoPid；
+      - PID 文件存在但进程不存在 → LeftoverGone（可清理 PID 文件）；
+      - 进程存在但命令行/路径不含服务目录 → LeftoverReused（PID 被无关进程复用，
+        只清理 PID 文件，绝不误杀）；
+      - 进程存在且属于本服务 → LeftoverRunning（Host 未拉起时不应存在，
+        视为遗留，可由“清理遗留进程”入口二次确认后强杀）。
 #>
 function Get-McpServiceStatus {
     [CmdletBinding()]
@@ -120,20 +127,19 @@ function Get-McpServiceStatus {
     $services = Get-McpServices
     if ($Code) { $services = $services | Where-Object { $_.Code -eq $Code.ToUpperInvariant() } }
     foreach ($svc in $services) {
-        $ready = (Get-McpConfigReadiness -Code $svc.Code | Select-Object -First 1).Ready
         $svcPid = Get-McpServicePid -Service $svc
-        $state = $script:McpServiceState.Stopped
+        $state = $script:McpServiceState.NoPid
         $proc = $null
         if ($svcPid) {
             $proc = Get-McpProcessById -ProcessId $svcPid
             if (-not $proc) {
-                $state = $script:McpServiceState.Zombie
+                $state = $script:McpServiceState.LeftoverGone
             }
             elseif (Test-McpProcessOwnership -Process $proc -Service $svc) {
-                $state = $script:McpServiceState.Running
+                $state = $script:McpServiceState.LeftoverRunning
             }
             else {
-                $state = $script:McpServiceState.PidReused
+                $state = $script:McpServiceState.LeftoverReused
             }
         }
         [pscustomobject]@{
@@ -142,7 +148,6 @@ function Get-McpServiceStatus {
             DisplayName = $svc.DisplayName
             State       = $state
             Pid         = $svcPid
-            Ready       = $ready
             LogFile     = $svc.LogFile
             LogExists   = (Test-Path -LiteralPath $svc.LogFileFull)
             PidFile     = $svc.PidFile
@@ -153,13 +158,14 @@ function Get-McpServiceStatus {
 
 <#
 .SYNOPSIS
-    清理僵尸 PID 文件（进程已消失或 PID 被复用时删除 PID 文件）。
+    清理失效 PID 文件（进程已消失或 PID 被复用时删除 PID 文件；不触碰仍在运行的进程）。
 #>
 function Remove-McpStalePidFile {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)]$Service)
     $st = Get-McpServiceStatus -Code $Service.Code | Select-Object -First 1
-    if ($st.State -ne $script:McpServiceState.Running -and (Test-Path -LiteralPath $Service.PidFileFull)) {
+    if ($st.State -in @($script:McpServiceState.LeftoverGone, $script:McpServiceState.LeftoverReused) -and
+        (Test-Path -LiteralPath $Service.PidFileFull)) {
         Remove-Item -LiteralPath $Service.PidFileFull -Force
         Write-Host ("已清理 PID 文件：{0}（{1}）" -f $Service.PidFile, $st.State)
         Write-McpOpsLog -Action '清理PID' -Service $Service.Id -Detail $st.State
@@ -169,200 +175,347 @@ function Remove-McpStalePidFile {
 }
 
 # ---------------------------------------------------------------------------
-# 启动
+# 启动命令诊断
 # ---------------------------------------------------------------------------
 
 <#
 .SYNOPSIS
-    启动单个服务（内部核心）。
-
-.DESCRIPTION
-    仅当服务“配置就绪”时启动；未就绪跳过并中文提示（列出缺失项）。
-    StartCommand 为注册表占位（$null/空）时提示待 M5–M8 接入。
-    启动后写入 PID 文件；stdout/stderr 重定向到服务日志。
-    任何异常只影响本服务，不阻断批量流程（由 Start-McpServices 兜底）。
+    判断服务的启动命令是否已回填注册表（非空数组且首元素非占位符）。
 #>
-function Invoke-McpServiceStart {
+function Test-McpStartCommandFilled {
     [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]$Service,
-        [switch]$Quiet
-    )
-    $head = if ($Quiet) { { param($m) } } else { { param($m) Write-Host $m } }
-    $readyInfo = Get-McpConfigReadiness -Code $Service.Code | Select-Object -First 1
+    param([Parameter(Mandatory = $true)]$Service)
+    $cmd = $Service.StartCommand
+    if (-not $cmd -or $cmd.Count -lt 1) { return $false }
+    $exe = "$($cmd[0])".Trim()
+    if (-not $exe) { return $false }
+    if ($exe -match '^<.*>$') { return $false }   # <待 Mx 回填> 形式占位
+    return $true
+}
 
-    if (-not $readyInfo.Ready) {
-        & $head ("[跳过] {0}：未配置就绪（缺失：{1}）。请先运行配置向导。" -f $Service.DisplayName, ($readyInfo.Missing -join ', '))
-        Write-McpOpsLog -Action '启动跳过' -Service $Service.Id -Detail '未配置就绪'
-        return [pscustomobject]@{ Code = $Service.Code; Started = $false; Reason = 'not-ready' }
+<#
+.SYNOPSIS
+    判断启动命令的可执行文件是否可定位（绝对路径存在，或可在 PATH 中找到）。
+#>
+function Test-McpCommandAvailable {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$Service)
+    if (-not (Test-McpStartCommandFilled -Service $Service)) { return $false }
+    $exe = "$($Service.StartCommand[0])".Trim()
+    if ([IO.Path]::IsPathRooted($exe)) {
+        return (Test-Path -LiteralPath $exe -PathType Leaf)
     }
+    return ($null -ne (Get-Command $exe -ErrorAction SilentlyContinue))
+}
 
-    if (-not $Service.StartCommand) {
-        & $head ("[跳过] {0}：启动命令尚未接入（M5–M8 回填注册表 StartCommand 后可用）。" -f $Service.DisplayName)
-        Write-McpOpsLog -Action '启动跳过' -Service $Service.Id -Detail 'StartCommand占位'
-        return [pscustomobject]@{ Code = $Service.Code; Started = $false; Reason = 'no-command' }
-    }
-
-    # 已在运行则不重复启动
-    $st = Get-McpServiceStatus -Code $Service.Code | Select-Object -First 1
-    if ($st.State -eq $script:McpServiceState.Running) {
-        & $head ("[跳过] {0}：已在运行（PID {1}）。" -f $Service.DisplayName, $st.Pid)
-        return [pscustomobject]@{ Code = $Service.Code; Started = $false; Reason = 'already-running' }
-    }
-    if ($st.State -ne $script:McpServiceState.Stopped) {
-        Remove-McpStalePidFile -Service $Service | Out-Null
-    }
-
-    try {
-        $dir = Split-Path -Parent $Service.PidFileFull
-        if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-        $logDir = Split-Path -Parent $Service.LogFileFull
-        if (-not (Test-Path -LiteralPath $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
-
-        $proc = Start-Process -FilePath "$($Service.StartCommand[0])" `
-            -ArgumentList "$($Service.StartCommand[1..($Service.StartCommand.Count - 1)])" `
-            -WorkingDirectory (Get-McpRepoRoot) `
-            -RedirectStandardOutput $Service.LogFileFull `
-            -RedirectStandardError ($Service.LogFileFull -replace '\.log$', '.err.log') `
-            -WindowStyle Hidden -PassThru
-
-        Set-Content -LiteralPath $Service.PidFileFull -Value $proc.Id -Encoding ASCII
-        & $head ("[启动] {0}：PID {1}（日志 {2}）" -f $Service.DisplayName, $proc.Id, $Service.LogFile)
-        Write-McpOpsLog -Action '启动' -Service $Service.Id -Detail ("PID={0}" -f $proc.Id)
-        return [pscustomobject]@{ Code = $Service.Code; Started = $true; Pid = $proc.Id; Reason = 'ok' }
-    }
-    catch {
-        & $head ("[失败] {0}：{1}" -f $Service.DisplayName, $_.Exception.Message)
-        Write-McpOpsLog -Action '启动失败' -Service $Service.Id -Detail $_.Exception.Message
-        return [pscustomobject]@{ Code = $Service.Code; Started = $false; Reason = 'error' }
+<#
+.SYNOPSIS
+    判断依赖环境是否已初始化（python→venv；node→node_modules；binary→<服务Id>.exe）。
+#>
+function Test-McpDepsReady {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$Service)
+    $svcDir = Join-Path (Get-McpRepoRoot) $Service.Id
+    switch ($Service.Stack) {
+        'python' {
+            return (Test-Path -LiteralPath (Join-Path $svcDir 'venv\Scripts\python.exe') -PathType Leaf)
+        }
+        'node' {
+            $nm = Join-Path $svcDir 'node_modules'
+            return ((Test-Path -LiteralPath $nm -PathType Container) -and
+                    (@(Get-ChildItem -LiteralPath $nm -ErrorAction SilentlyContinue).Count -gt 0))
+        }
+        'binary' {
+            return (Test-Path -LiteralPath (Join-Path $svcDir ("{0}.exe" -f $Service.Id)) -PathType Leaf)
+        }
+        default { return $false }
     }
 }
 
 <#
 .SYNOPSIS
-    批量启动服务：只启动“已就绪”的服务；单个失败不阻断其余。
+    生成全部（或指定）服务的启动命令诊断表。
 
-.PARAMETER Code
-    指定服务代号（A/B/C/D）启动单个；省略则批量启动全部就绪服务。
+.DESCRIPTION
+    每服务输出：配置就绪 / 依赖环境 / 启动命令已回填 / 可执行文件可定位。
+    命令未回填时给出中文提示而非抛异常。
 #>
-function Start-McpServices {
+function Get-McpServiceDiagnostics {
     [CmdletBinding()]
     param([AllowEmptyString()][string]$Code)
     $services = Get-McpServices
     if ($Code) { $services = $services | Where-Object { $_.Code -eq $Code.ToUpperInvariant() } }
-    $results = @()
     foreach ($svc in $services) {
-        $results += Invoke-McpServiceStart -Service $svc
-    }
-    return $results
-}
+        $ready = (Get-McpConfigReadiness -Code $svc.Code | Select-Object -First 1)
+        $cmdFilled = Test-McpStartCommandFilled -Service $svc
+        $cmdExists = if ($cmdFilled) { Test-McpCommandAvailable -Service $svc } else { $false }
+        $depsReady = Test-McpDepsReady -Service $svc
 
-# ---------------------------------------------------------------------------
-# 停止（通知 → 等待 → 二次确认 → 强制）
-# ---------------------------------------------------------------------------
-
-<#
-.SYNOPSIS
-    停止单个服务：通知退出 → 轮询等待全局超时 → 超时二次确认 → 强制结束。
-
-.DESCRIPTION
-    - “通知退出”先以 taskkill（不带 /F）尝试；无窗口进程通常无效，M5–M8 可按服务定制。
-    - 等待时长取注册表全局参数 GracefulStopTimeoutSeconds，按 StopPollingIntervalSeconds 轮询。
-    - 超时后询问是否强制结束（taskkill /F /T 连带子进程树）。
-    - PID 被无关进程复用（PidReused）时只清理 PID 文件，绝不误杀他人进程。
-    - 成功后清理 PID 文件。
-#>
-function Invoke-McpServiceStop {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]$Service,
-        [switch]$Quiet
-    )
-    $head = if ($Quiet) { { param($m) } } else { { param($m) Write-Host $m } }
-    $global = Get-McpGlobalConfig
-    $st = Get-McpServiceStatus -Code $Service.Code | Select-Object -First 1
-
-    if ($st.State -eq $script:McpServiceState.Stopped) {
-        & $head ("[停止] {0}：未在运行。" -f $Service.DisplayName)
-        return [pscustomobject]@{ Code = $Service.Code; Stopped = $true; Reason = 'not-running' }
-    }
-    if ($st.State -eq $script:McpServiceState.Zombie -or $st.State -eq $script:McpServiceState.PidReused) {
-        & $head ("[停止] {0}：{1}。" -f $Service.DisplayName, $st.State)
-        Remove-McpStalePidFile -Service $Service | Out-Null
-        return [pscustomobject]@{ Code = $Service.Code; Stopped = $true; Reason = 'stale-pid-cleaned' }
-    }
-
-    $svcPid = $st.Pid
-    & $head ("[停止] {0}：通知进程 PID {1} 退出（优雅等待最长 {2} 秒）…" -f $Service.DisplayName, $svcPid, $global.GracefulStopTimeoutSeconds)
-    Start-Process -FilePath 'taskkill.exe' -ArgumentList "/PID $svcPid" -WindowStyle Hidden -ErrorAction SilentlyContinue | Out-Null
-
-    $deadline = (Get-Date).AddSeconds($global.GracefulStopTimeoutSeconds)
-    while ((Get-Date) -lt $deadline) {
-        if (-not (Get-McpProcessById -ProcessId $svcPid)) { break }
-        Start-Sleep -Seconds $global.StopPollingIntervalSeconds
-    }
-
-    if (Get-McpProcessById -ProcessId $svcPid) {
-        $ans = if ($Quiet) { $true } else { (Read-Host -Prompt ("优雅退出超时。是否强制结束 PID {0} 及其子进程？[y/N]" -f $svcPid)) -match '^(y|Y|是)$' }
-        if ($ans) {
-            Start-Process -FilePath 'taskkill.exe' -ArgumentList "/PID $svcPid /T /F" -WindowStyle Hidden | Out-Null
-            Start-Sleep -Seconds $global.StopPollingIntervalSeconds
+        $hint = ''
+        if (-not $ready.Ready) {
+            $hint = '配置未就绪（缺失：' + ($ready.Missing -join ', ') + '），请先运行配置向导'
+        }
+        elseif (-not $cmdFilled) {
+            $hint = '启动命令未回填（M5–M8 接入里程碑回填注册表 StartCommand 后可探活）'
+        }
+        elseif (-not $cmdExists) {
+            $hint = '可执行文件不存在或不在 PATH（检查安装与注册表命令首段）'
+        }
+        elseif (-not $depsReady) {
+            $hint = '依赖环境未初始化，请先运行 Bootstrap'
         }
         else {
-            & $head ("[停止] {0}：已保留进程运行（PID {1}）。" -f $Service.DisplayName, $svcPid)
-            Write-McpOpsLog -Action '停止放弃' -Service $Service.Id -Detail ("PID={0} 保留" -f $svcPid)
-            return [pscustomobject]@{ Code = $Service.Code; Stopped = $false; Reason = 'kept-by-user' }
+            $hint = '可由 Host 按需 stdio 拉起（可用“握手探活”验证）'
+        }
+
+        [pscustomobject]@{
+            Code           = $svc.Code
+            Id             = $svc.Id
+            DisplayName    = $svc.DisplayName
+            ConfigReady    = $ready.Ready
+            DepsReady      = $depsReady
+            CommandFilled  = $cmdFilled
+            CommandExists  = $cmdExists
+            MissingFields  = ($ready.Missing -join ', ')
+            Hint           = $hint
         }
     }
-
-    if (Get-McpProcessById -ProcessId $svcPid) {
-        & $head ("[失败] {0}：强制结束仍失败（PID {1}），请人工处理。" -f $Service.DisplayName, $svcPid)
-        Write-McpOpsLog -Action '停止失败' -Service $Service.Id -Detail ("PID={0}" -f $svcPid)
-        return [pscustomobject]@{ Code = $Service.Code; Stopped = $false; Reason = 'force-failed' }
-    }
-
-    if (Test-Path -LiteralPath $Service.PidFileFull) { Remove-Item -LiteralPath $Service.PidFileFull -Force }
-    & $head ("[停止] {0}：已退出并清理 PID。" -f $Service.DisplayName)
-    Write-McpOpsLog -Action '停止' -Service $Service.Id -Detail ("PID={0}" -f $svcPid)
-    return [pscustomobject]@{ Code = $Service.Code; Stopped = $true; Reason = 'ok' }
 }
 
 <#
 .SYNOPSIS
-    批量停止服务（省略 Code 时停止全部运行中服务）。
+    以表格输出诊断结果。
 #>
-function Stop-McpServices {
+function Show-McpServiceDiagnostics {
     [CmdletBinding()]
     param([AllowEmptyString()][string]$Code)
+    Get-McpServiceDiagnostics @PSBoundParameters | ForEach-Object {
+        [pscustomobject]@{
+            '代号'             = $_.Code
+            '服务'             = $_.DisplayName
+            '配置就绪'         = if ($_.ConfigReady) { '是' } else { '否' }
+            '依赖环境'         = if ($_.DepsReady) { '已就绪' } else { '未初始化' }
+            '启动命令已回填'   = if ($_.CommandFilled) { '是' } else { '否' }
+            '可执行文件'       = if ($_.CommandExists) { '可定位' } else { '不可定位' }
+            '提示'             = $_.Hint
+        }
+    } | Format-Table -AutoSize -Wrap | Out-Host
+    Write-McpOpsLog -Action '诊断' -Service '-' -Detail 'ALL'
+}
+
+# ---------------------------------------------------------------------------
+# MCP 握手探活（stdio 短时拉起，不写 PID、不托管）
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    对单个服务执行 MCP stdio 握手探活。
+
+.DESCRIPTION
+    以短时进程按注册表 StartCommand 拉起服务，发送 JSON-RPC initialize 请求，
+    等待响应（默认 8 秒超时）；无论结果如何都强制结束进程树（taskkill /F /T），
+    不写 PID 文件、不重定向日志。探活失败只影响本服务，不影响其他服务。
+
+.PARAMETER TimeoutSeconds
+    等待 initialize 响应的超时秒数（默认 8）。
+#>
+function Invoke-McpHandshakeProbe {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Service,
+        [int]$TimeoutSeconds = 8,
+        [switch]$Quiet
+    )
+    $head = if ($Quiet) { { param($m) } } else { { param($m) Write-Host $m } }
+
+    if (-not (Test-McpStartCommandFilled -Service $Service)) {
+        & $head ("[探活跳过] {0}：启动命令未回填（M5–M8 接入里程碑回填后可用）。" -f $Service.DisplayName)
+        Write-McpOpsLog -Action '探活跳过' -Service $Service.Id -Detail 'StartCommand占位'
+        return [pscustomobject]@{ Code = $Service.Code; Probed = $false; Ok = $false; Reason = 'no-command' }
+    }
+    if (-not (Test-McpCommandAvailable -Service $Service)) {
+        & $head ("[探活失败] {0}：可执行文件不存在或不在 PATH。" -f $Service.DisplayName)
+        Write-McpOpsLog -Action '探活失败' -Service $Service.Id -Detail '可执行文件不可定位'
+        return [pscustomobject]@{ Code = $Service.Code; Probed = $true; Ok = $false; Reason = 'exe-missing' }
+    }
+
+    $exe = "$($Service.StartCommand[0])".Trim()
+    $restArgs = @()
+    if ($Service.StartCommand.Count -gt 1) { $restArgs = @($Service.StartCommand[1..($Service.StartCommand.Count - 1)]) }
+    # 简单引号包装（参数含空格场景；M5–M8 回填时避免在参数中内嵌双引号）
+    $argLine = ($restArgs | ForEach-Object { if ("$_" -match '\s') { '"{0}"' -f $_ } else { "$_" } }) -join ' '
+
+    $initJson = '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"mcpctl-probe","version":"0.1.0"}}}'
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $exe
+    $psi.Arguments = $argLine
+    $psi.WorkingDirectory = (Get-McpRepoRoot)
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+
+    $sbOut = New-Object System.Text.StringBuilder
+    $sbErr = New-Object System.Text.StringBuilder
+    $onOut = [System.Diagnostics.DataReceivedEventHandler]{ param($s, $e) if ($null -ne $e.Data) { [void]$sbOut.AppendLine($e.Data) } }
+    $onErr = [System.Diagnostics.DataReceivedEventHandler]{ param($s, $e) if ($null -ne $e.Data) { [void]$sbErr.AppendLine($e.Data) } }
+
+    $proc = $null
+    try {
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $proc.add_OutputDataReceived($onOut)
+        $proc.add_ErrorDataReceived($onErr)
+        $proc.BeginOutputReadLine()
+        $proc.BeginErrorReadLine()
+        $proc.StandardInput.WriteLine($initJson)
+        $proc.StandardInput.Flush()
+
+        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+        $responded = $false
+        while ((Get-Date) -lt $deadline) {
+            if ($sbOut.ToString() -match '"jsonrpc"') { $responded = $true; break }
+            if ($proc.HasExited) { break }
+            Start-Sleep -Milliseconds 150
+        }
+
+        $stderrTail = ''
+        if (-not $responded) { $stderrTail = ($sbErr.ToString() -split "`n" | Select-Object -Last 3) -join ' ' }
+        $exitNote = if ($proc.HasExited) { ("进程已退出（code {0}）" -f $proc.ExitCode) } else { '进程仍在运行' }
+    }
+    catch {
+        if ($proc -and -not $proc.HasExited) { Start-Process -FilePath 'taskkill.exe' -ArgumentList "/PID $($proc.Id) /T /F" -WindowStyle Hidden -ErrorAction SilentlyContinue | Out-Null }
+        & $head ("[探活失败] {0}：启动异常（{1}）。" -f $Service.DisplayName, $_.Exception.Message)
+        Write-McpOpsLog -Action '探活失败' -Service $Service.Id -Detail $_.Exception.Message
+        return [pscustomobject]@{ Code = $Service.Code; Probed = $true; Ok = $false; Reason = 'error' }
+    }
+    finally {
+        # 无论结果如何都强制清理探活进程树（探活进程绝不遗留）
+        if ($proc -and -not $proc.HasExited) {
+            Start-Process -FilePath 'taskkill.exe' -ArgumentList "/PID $($proc.Id) /T /F" -WindowStyle Hidden -ErrorAction SilentlyContinue | Out-Null
+            $proc.WaitForExit(3000) | Out-Null
+        }
+        if ($proc) {
+            try { $proc.remove_OutputDataReceived($onOut) } catch { }
+            try { $proc.remove_ErrorDataReceived($onErr) } catch { }
+            $proc.Dispose()
+        }
+    }
+
+    if ($responded) {
+        & $head ("[探活通过] {0}：stdio 握手成功（initialize 已响应）。" -f $Service.DisplayName)
+        Write-McpOpsLog -Action '探活通过' -Service $Service.Id -Detail 'initialize响应'
+        return [pscustomobject]@{ Code = $Service.Code; Probed = $true; Ok = $true; Reason = 'ok' }
+    }
+    & $head ("[探活失败] {0}：{1}，未见 initialize 响应。{2}" -f $Service.DisplayName, $exitNote, $(if ($stderrTail) { "stderr 摘要：$stderrTail" }))
+    Write-McpOpsLog -Action '探活失败' -Service $Service.Id -Detail $exitNote
+    return [pscustomobject]@{ Code = $Service.Code; Probed = $true; Ok = $false; Reason = 'no-response' }
+}
+
+# ---------------------------------------------------------------------------
+# 遗留进程清理（二次确认；taskkill /F /T 强杀进程树）
+# ---------------------------------------------------------------------------
+
+<#
+.SYNOPSIS
+    清理单个服务的遗留进程（二次确认后 taskkill /F /T 强杀进程树并删除 PID 文件）。
+
+.DESCRIPTION
+    仅处理“遗留进程”三种状态；无 PID 文件时直接提示无需清理。
+    LeftoverReused（PID 被无关程序占用）只删除 PID 文件，绝不终止他人进程。
+#>
+function Invoke-McpLeftoverCleanupSingle {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Service,
+        [switch]$Quiet
+    )
+    $head = if ($Quiet) { { param($m) } } else { { param($m) Write-Host $m } }
+    $st = Get-McpServiceStatus -Code $Service.Code | Select-Object -First 1
+
+    if ($st.State -eq $script:McpServiceState.NoPid) {
+        & $head ("[清理] {0}：无遗留进程。" -f $Service.DisplayName)
+        return [pscustomobject]@{ Code = $Service.Code; Cleaned = $false; Reason = 'nothing' }
+    }
+
+    if ($st.State -in @($script:McpServiceState.LeftoverGone, $script:McpServiceState.LeftoverReused)) {
+        Remove-McpStalePidFile -Service $Service | Out-Null
+        & $head ("[清理] {0}：已删除失效 PID 文件（{1}）。" -f $Service.DisplayName, $st.State)
+        return [pscustomobject]@{ Code = $Service.Code; Cleaned = $true; Reason = 'pid-file-removed' }
+    }
+
+    # LeftoverRunning：进程仍在运行 —— 二次确认后强杀进程树
+    $svcPid = $st.Pid
+    $ans = if ($Quiet) { $true } else {
+        (Read-Host -Prompt ("确认强制结束 {0} 的遗留进程 PID {1} 及其子进程？（taskkill /F /T 直接强杀进程树）[y/N]" -f $Service.DisplayName, $svcPid)) -match '^(y|Y|是)$'
+    }
+    if (-not $ans) {
+        & $head ("[清理] {0}：已取消，保留进程运行（PID {1}）。" -f $Service.DisplayName, $svcPid)
+        Write-McpOpsLog -Action '清理取消' -Service $Service.Id -Detail ("PID={0} 保留" -f $svcPid)
+        return [pscustomobject]@{ Code = $Service.Code; Cleaned = $false; Reason = 'kept-by-user' }
+    }
+
+    Start-Process -FilePath 'taskkill.exe' -ArgumentList "/PID $svcPid /T /F" -WindowStyle Hidden | Out-Null
+    $deadline = (Get-Date).AddSeconds((Get-McpGlobalConfig).GracefulStopTimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if (-not (Get-McpProcessById -ProcessId $svcPid)) { break }
+        Start-Sleep -Seconds (Get-McpGlobalConfig).StopPollingIntervalSeconds
+    }
+    if (Get-McpProcessById -ProcessId $svcPid) {
+        & $head ("[清理失败] {0}：强杀仍失败（PID {1}），请人工处理。" -f $Service.DisplayName, $svcPid)
+        Write-McpOpsLog -Action '清理失败' -Service $Service.Id -Detail ("PID={0}" -f $svcPid)
+        return [pscustomobject]@{ Code = $Service.Code; Cleaned = $false; Reason = 'force-failed' }
+    }
+    if (Test-Path -LiteralPath $Service.PidFileFull) { Remove-Item -LiteralPath $Service.PidFileFull -Force }
+    & $head ("[清理] {0}：遗留进程已强杀（PID {1}），PID 文件已删除。" -f $Service.DisplayName, $svcPid)
+    Write-McpOpsLog -Action '清理遗留进程' -Service $Service.Id -Detail ("PID={0} 强杀进程树" -f $svcPid)
+    return [pscustomobject]@{ Code = $Service.Code; Cleaned = $true; Reason = 'force-killed' }
+}
+
+<#
+.SYNOPSIS
+    批量清理遗留进程（省略 Code 时遍历全部服务；单服务失败不阻断其余）。
+#>
+function Invoke-McpLeftoverCleanup {
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()][string]$Code,
+        [switch]$Quiet
+    )
     $services = Get-McpServices
     if ($Code) { $services = $services | Where-Object { $_.Code -eq $Code.ToUpperInvariant() } }
     $results = @()
     foreach ($svc in $services) {
-        $results += Invoke-McpServiceStop -Service $svc
+        $results += Invoke-McpLeftoverCleanupSingle -Service $svc -Quiet:$Quiet
     }
     return $results
 }
 
 # ---------------------------------------------------------------------------
-# 状态表格
+# 状态表格（新列：配置就绪 / 依赖环境 / 启动命令已回填 / 遗留进程 / 日志位置）
 # ---------------------------------------------------------------------------
 
 <#
 .SYNOPSIS
-    以表格输出全部服务状态：服务名、状态、PID、是否就绪、日志位置。
+    以表格输出全部服务状态（传输模型整改后的新列集）。
 #>
 function Show-McpServiceStatus {
     [CmdletBinding()]
     param([AllowEmptyString()][string]$Code)
+    $diags = @{}
+    Get-McpServiceDiagnostics @PSBoundParameters | ForEach-Object { $diags[$_.Code] = $_ }
     Get-McpServiceStatus @PSBoundParameters | ForEach-Object {
+        $d = $diags[$_.Code]
         [pscustomobject]@{
-            '代号'     = $_.Code
-            '服务'     = $_.DisplayName
-            '状态'     = $_.State
-            'PID'      = $_.Pid
-            '配置就绪' = if ($_.Ready) { '是' } else { '否' }
-            '日志位置' = $_.LogFile
+            '代号'           = $_.Code
+            '服务'           = $_.DisplayName
+            '配置就绪'       = if ($d -and $d.ConfigReady) { '是' } else { '否' }
+            '依赖环境'       = if ($d -and $d.DepsReady) { '已就绪' } else { '未初始化' }
+            '启动命令已回填' = if ($d -and $d.CommandFilled) { '是' } else { '否' }
+            '遗留进程'       = $_.State
+            '日志位置'       = $_.LogFile
         }
-    } | Format-Table -AutoSize | Out-Host
+    } | Format-Table -AutoSize -Wrap | Out-Host
     Write-McpOpsLog -Action '查看状态' -Service '-' -Detail 'ALL'
 }
