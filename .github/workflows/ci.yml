@@ -15,6 +15,9 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+        with:
+          # gitleaks 对 PR 事件按提交范围扫描（首提交^..head），需要完整历史
+          fetch-depth: 0
 
       - name: 模板完整性检查
         run: |
