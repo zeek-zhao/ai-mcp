@@ -3,7 +3,7 @@
 | 文档编号 | DOC-HOST-001 |
 |---|---|
 | 文档名称 | Host 接入配置 |
-| 版本 | v0.4.0 |
+| 版本 | v0.5.0 |
 | 状态 | 生效（A） |
 | 密级 | 内部 |
 | 作者 | zeek.zhao |
@@ -70,7 +70,7 @@
 - [ ] 每个条目的 `env.MCP_SUITE_CONFIG` 指向本机存在的 `mcp.config.json`。
 - [ ] 每个服务可完成一次只读探活调用。
 - [ ] Host 配置中不含明文凭证。
-- [ ] Host 退出后服务进程随之退出，无遗留进程（可用总控「遗留进程检测」复核）。
+- [ ] Host 退出后服务进程随之退出，无残留进程（按 `docs/operations/验收记录-M10.md` 步骤 C 的进程观察命令复核；总控的「遗留进程」检测基于 PID 文件，不覆盖 Host 拉起的进程）。
 
 ## 变更记录
 
@@ -80,3 +80,4 @@
 | v0.2.0 | 2026-11-25 | zeek.zhao | 升级为模型一可用结构模板：Host 直接拉起、凭证注入规则、遗留进程验证项 | DEV-003/004，ADR-006，Issue #20 |
 | v0.3.0 | 2026-11-25 | zeek.zhao | 四条目 command/args 按 StartCommand 回填后的最终形态更新（gerrit venv exe+--config+stdio、node+launcher、venv python+launcher.py） | P0-1/P0-3，DEV-008/009，Issue #39 |
 | v0.4.0 | 2026-11-26 | zeek.zhao | 四条目改为启动器形态（gerrit 改为 venv python + launcher.py）并补充 env.MCP_SUITE_CONFIG；接入原则与注入规则改为统一配置口径；验证清单补充 MCP_SUITE_CONFIG 检查项 | 统一配置改造（ADR-007，T-DOC-01，Issue #57） |
+| v0.5.0 | 2026-11-26 | zeek.zhao | 验证清单「Host 退出后无残留进程」的复核方法更正：总控的遗留进程检测基于 PID 文件，不覆盖 Host 拉起的进程，改为引用端到端验收清单的进程观察命令 | 与实现对齐（T-VER-03，Issue #71） |

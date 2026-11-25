@@ -31,7 +31,7 @@
 . (Join-Path -Path $PSScriptRoot -ChildPath 'registry.ps1')
 . (Join-Path -Path $PSScriptRoot -ChildPath 'suite-config.ps1')
 
-# 遗留进程状态常量（模型一下：PID 文件只应来自历史遗留或外部拉起，mcpctl 不再写入）
+# 遗留进程状态常量（模型一：PID 文件只应来自历史遗留或外部拉起，mcpctl 不再写入）
 $script:McpServiceState = @{
     NoPid           = '无遗留进程'
     LeftoverGone    = '遗留（进程已消失，可清理 PID 文件）'

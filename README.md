@@ -28,6 +28,7 @@
 | 问题记录 | `docs/operations/问题记录.md` | 开发过程中遇到的问题、原因、措施与状态 |
 | 更新记录 | `docs/operations/更新记录.md` | 每次版本/提交做了什么的变更日志 |
 | 验收记录-M5至M8 | `docs/operations/验收记录-M5至M8.md` | 四服务 Host 握手与连通验收步骤（结论由负责人人工执行后回填） |
+| 验收记录-M10 | `docs/operations/验收记录-M10.md` | Host 端到端验收清单：可见 4 个服务、按需拉起、退出无残留、日志无凭证、配置生效时机（结论由负责人人工执行后回填） |
 
 ### 给 AI 读的文档（`ai/`）
 > AI 进入仓库后，**先读 `ai/README.md`**，按其中的阅读顺序与约束执行。
@@ -71,9 +72,9 @@ ai-mcp/
 
 ## 四、当前阶段
 
-- 阶段：**M0–M4 完成；M5–M8 实现与依赖接入完成，验收待执行；统一配置改造（ADR-007）完成**。四个服务与总控共用仓库根的 `mcp.config.json`：配置向导逐字段录入，启动器经 `MCP_SUITE_CONFIG` 读取，Host 配置导出自带 env；分服务配置模板已下线。Gerrit 已在真实环境完成只读连通，GitHub / Jenkins / Atlassian 的真实连通待人工验证。
-- 下一阶段：验收与留痕——DEV-001 处置决定留痕、四服务 Host 握手与连通验收（TASK-M5-02 ~ TASK-M8-02）、M9 登录预检与环境自愈、M10 Host 端到端验收。按 `docs/operations/任务清单.md` 与 `ai/实现提示词.md` 逐任务推进。
-- 快速上手：复制 `mcp.config.sample.json` 为 `mcp.config.json` 后运行 `scripts/mcpctl.ps1`（菜单 4 配置向导逐字段录入 → 菜单 5 Bootstrap 初始化依赖 → 菜单 6 导出 Host 配置）；字段含义见 `docs/services/配置字段说明.md`。
+- 阶段：**M0–M9 完成；统一配置改造（ADR-007）完成；M10 验收清单已就绪，待负责人执行**。四个服务与总控共用仓库根的 `mcp.config.json`：配置向导逐字段录入，启动器经 `MCP_SUITE_CONFIG` 读取，Host 配置导出自带 env；分服务配置模板已下线。登录预检与环境自愈见菜单 7。Gerrit 已在真实环境完成只读连通，GitHub / Jenkins / Atlassian 的真实连通待人工验证。
+- 下一阶段：人工验收与回填——先按 `docs/operations/验收记录-M5至M8.md` 完成四服务 Host 握手与连通验收（TASK-M5-02 ~ TASK-M8-02），再按 `docs/operations/验收记录-M10.md` 完成 Host 端到端验收（TASK-M10-01）并回填结论。DEV-001 的处置决定已留痕（暂缓重置，状态保持开放）。
+- 快速上手：复制 `mcp.config.sample.json` 为 `mcp.config.json` 后运行 `scripts/mcpctl.ps1`（菜单 4 配置向导逐字段录入 → 菜单 5 Bootstrap 初始化依赖 → 菜单 7 登录预检确认无未通过项 → 菜单 6 导出 Host 配置）；字段含义见 `docs/services/配置字段说明.md`。
 
 ## 五、安全提示
 
