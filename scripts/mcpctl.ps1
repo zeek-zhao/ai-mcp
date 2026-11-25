@@ -11,17 +11,18 @@
       4. 配置向导（统一配置 mcp.config.json：逐字段录入、从旧配置导入、连通性测试）
       5. 初始化运行环境 Bootstrap（M4：检查 / 初始化 / 重建）
       6. 导出 Host 配置（stdio 配置片段写入仓库外本地文件，不含明文凭证；条目带 env.MCP_SUITE_CONFIG，已禁用的服务不导出）
-      7. 登录预检（占位，M9 按“登录预检与环境自愈”重定义后提供）
+      7. 登录预检与环境自愈（检查运行时 / 依赖环境 / 配置 / 启动命令并给出修复命令；自愈需确认或配置允许）
     MCP 服务本体由 Host（Cursor / Claude Desktop 等）按需 stdio 拉起，
     mcpctl 不启动、不停止、不托管服务进程。
 
     运行：pwsh / powershell 下执行 scripts\mcpctl.ps1。
 #>
 
-# 加载核心库（注册表 / 统一配置 / 配置向导 / 诊断与遗留进程治理 / Bootstrap）
+# 加载核心库（注册表 / 统一配置 / 配置向导 / 诊断与遗留进程治理 / Bootstrap / 登录预检）
 . (Join-Path -Path $PSScriptRoot -ChildPath 'lib\service-utils.ps1')
 . (Join-Path -Path $PSScriptRoot -ChildPath 'lib\config-wizard.ps1')
 . (Join-Path -Path $PSScriptRoot -ChildPath 'bootstrap.ps1')
+. (Join-Path -Path $PSScriptRoot -ChildPath 'autostart.ps1')
 
 function Show-McpMenu {
     Clear-Host
@@ -36,7 +37,7 @@ function Show-McpMenu {
     Write-Host '  [4] 配置向导（统一配置 mcp.config.json）'
     Write-Host '  [5] 初始化运行环境（Bootstrap：检查 / 初始化 / 重建）'
     Write-Host '  [6] 导出 Host 配置（stdio 片段，本地文件）'
-    Write-Host '  [7] 登录预检 —— 待 M9 提供'
+    Write-Host '  [7] 登录预检与环境自愈（不拉起 MCP 进程）'
     Write-Host '  [0] 退出'
     Write-Host '----------------------------------------------'
 }
@@ -174,7 +175,29 @@ function Invoke-McpctlMenu {
             '6' {
                 Invoke-McpHostConfigExport
             }
-            '7' { Write-Host '（占位）登录预检与环境自愈将在 M9 提供（原“登录常驻”已取消，理由见 ADR-006）。' }
+            '7' {
+                Write-Host '登录预检与环境自愈：预检不拉起任何 MCP 进程，也不改动系统；自愈仅在确认（或配置 PreflightAutoBootstrap = $true）后执行。'
+                Write-Host '  [1] 立即预检    [2] 查看上次预检结果    [3] 环境自愈（Bootstrap 初始化缺失环境）'
+                $mode = Read-Host '请选择操作 [1-3]，直接回车取消'
+                if ($null -eq $mode) { Write-Host '输入已关闭，未执行预检。' }
+                else {
+                    switch ($mode.Trim()) {
+                        '1' { $null = Invoke-McpPreflight -AllowHeal }
+                        '2' { $null = Show-McpPreflightLastResult }
+                        '3' {
+                            $auto = $false
+                            $cfg = Get-McpGlobalConfig
+                            if ($cfg.ContainsKey('PreflightAutoBootstrap') -and $cfg['PreflightAutoBootstrap'] -eq $true) { $auto = $true }
+                            if ((Invoke-McpPreflightHeal -AutoAllowed:$auto) -eq '已执行') {
+                                Write-Host ''
+                                Write-Host '自愈后复检：'
+                                $null = Invoke-McpPreflight
+                            }
+                        }
+                        default { Write-Host '已取消。' }
+                    }
+                }
+            }
             '0' { return }
             default { Write-Host '输入无效，请重新选择。' }
         }
