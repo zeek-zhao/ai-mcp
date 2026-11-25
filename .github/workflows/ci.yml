@@ -22,11 +22,11 @@ jobs:
       - name: 模板完整性检查
         run: |
           set -e
-          # 各服务模板必须存在
-          test -f mcp-gerrit/gerrit_config.sample.json || echo "::warning::mcp-gerrit 模板待 M5 补齐"
-          test -f mcp-github/.env.template || echo "::warning::mcp-github 模板待 M6 补齐"
-          test -f mcp-jenkins/jenkins_config.sample.json || echo "::warning::mcp-jenkins 模板待 M7 补齐"
-          test -f mcp-atlassian/atlassian_config.sample.json || echo "::warning::mcp-atlassian 模板待 M8 补齐"
+          # 各服务模板必须存在；缺失即为错误（DEV-007 整改：warning 升级为 error 并失败）
+          test -f mcp-gerrit/gerrit_config.sample.json || { echo "::error::mcp-gerrit 模板缺失（期望 mcp-gerrit/gerrit_config.sample.json）"; exit 1; }
+          test -f mcp-github/.env.template || { echo "::error::mcp-github 模板缺失（期望 mcp-github/.env.template）"; exit 1; }
+          test -f mcp-jenkins/jenkins_config.sample.json || { echo "::error::mcp-jenkins 模板缺失（期望 mcp-jenkins/jenkins_config.sample.json）"; exit 1; }
+          test -f mcp-atlassian/atlassian_config.sample.json || { echo "::error::mcp-atlassian 模板缺失（期望 mcp-atlassian/atlassian_config.sample.json）"; exit 1; }
 
           # 真实本地配置不得被 Git 跟踪
           if git ls-files | grep -E '(^|/)(gerrit_config\.json|jenkins_config\.json|atlassian_config\.json|\.env)$'; then
