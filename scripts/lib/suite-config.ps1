@@ -289,6 +289,11 @@ function Get-McpSuiteConfigSection {
 <#
 .SYNOPSIS
     原子写入统一配置：先写同目录临时文件，再替换目标文件。
+
+.DESCRIPTION
+    替换阶段遇到“瞬时占用”时做有界重试：目标文件可能被杀毒软件、搜索索引器，
+    或刚读写完尚未完全释放句柄的进程短暂占用（典型报错“无法删除要被替换的文件”）。
+    只对 IO 异常重试，权限类错误立即报告；重试用尽后原文件保持不变。
 #>
 function Write-McpSuiteConfigAtomic {
     [CmdletBinding()]
@@ -301,6 +306,8 @@ function Write-McpSuiteConfigAtomic {
     $leaf = Split-Path -Leaf $Path
     $tmp = Join-Path $dir ('.' + $leaf + '.' + [guid]::NewGuid().ToString('N') + '.tmp')
     $utf8 = New-Object System.Text.UTF8Encoding($false)
+    # 每次重试前的等待间隔（毫秒），合计约 3 秒
+    $retryDelays = @(50, 100, 200, 400, 800, 1600)
     try {
         if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
             throw (New-Object System.IO.DirectoryNotFoundException "目录不存在：$dir")
@@ -314,17 +321,51 @@ function Write-McpSuiteConfigAtomic {
         finally {
             $stream.Dispose()
         }
-        if ([IO.File]::Exists($Path)) {
-            # 同卷原子替换（第三个参数传真正的 null：不生成备份文件）；目标被其他进程占用等情况会抛 IO 异常，原文件保持不变
-            [IO.File]::Replace($tmp, $Path, [NullString]::Value)
+        $pending = $null
+        for ($attempt = 0; $attempt -le $retryDelays.Count; $attempt++) {
+            if ($attempt -gt 0) {
+                if (-not ([IO.File]::Exists($tmp))) {
+                    # 临时文件已不存在：重试没有意义，按最后一次的错误报告
+                    break
+                }
+                Start-Sleep -Milliseconds $retryDelays[$attempt - 1]
+            }
+            try {
+                if ([IO.File]::Exists($Path)) {
+                    # 同卷原子替换（第三个参数传真正的 null：不生成备份文件）
+                    [IO.File]::Replace($tmp, $Path, [NullString]::Value)
+                }
+                else {
+                    [IO.File]::Move($tmp, $Path)
+                }
+                $pending = $null
+                break
+            }
+            catch {
+                $ex = $_.Exception
+                # PowerShell 调用 .NET 方法抛出的异常外面会包一层 MethodInvocationException：取内层真实异常判断类型
+                if ($ex -is [System.Management.Automation.MethodInvocationException] -and $null -ne $ex.InnerException) {
+                    $ex = $ex.InnerException
+                }
+                $pending = $ex
+                # 只对 IO 异常（多为瞬时占用）重试；权限等其他错误立即交由外层报告
+                if (-not ($ex -is [System.IO.IOException])) {
+                    throw $ex
+                }
+            }
         }
-        else {
-            [IO.File]::Move($tmp, $Path)
+        if ($null -ne $pending) {
+            # 重试已用尽：原样抛出最后一次的错误
+            throw $pending
         }
     }
     catch {
-        $reason = $_.Exception.Message
-        if ($_.Exception -is [System.UnauthorizedAccessException]) { $reason = '没有写入权限' }
+        $ex = $_.Exception
+        if ($ex -is [System.Management.Automation.MethodInvocationException] -and $null -ne $ex.InnerException) {
+            $ex = $ex.InnerException
+        }
+        $reason = $ex.Message
+        if ($ex -is [System.UnauthorizedAccessException]) { $reason = '没有写入权限' }
         throw ("统一配置写入失败：{0}（{1}）。原文件未改动。" -f $Path, $reason)
     }
     finally {
