@@ -60,6 +60,15 @@ $script:McpCtlGlobal = @{
     # 强制结束前等待进程退出的轮询间隔（秒）
     StopPollingIntervalSeconds = 1
 
+    # ---- 登录预检与环境自愈（M9，入口：菜单 7 / scripts\autostart.ps1）----
+    # 环境自愈开关：$true 表示预检发现依赖环境缺失时直接调用 Bootstrap（初始化缺失环境）；
+    # $false（默认）只给出修复命令，交互式菜单下会逐次询问确认。
+    PreflightAutoBootstrap = $false
+
+    # 登录触发：默认关闭。本工具不创建计划任务；如需登录时自动预检，由用户自行创建仅做预检的任务
+    # （命令见 scripts\autostart.ps1 头部说明）。开启后也只做预检，不做常驻（ADR-006）。
+    PreflightLoginTrigger = $false
+
     # 菜单与交互语言（本项目固定全中文）
     MenuLanguage = 'zh-CN'
 }

@@ -110,7 +110,7 @@ function Test-McpProcessOwnership {
     计算单个服务遗留进程状态。
 
 .DESCRIPTION
-    模型一下 mcpctl 不再拉起服务，PID 文件只可能来自：
+    模型一：mcpctl 不再拉起服务，PID 文件只可能来自：
       - 历史版本 mcpctl 托管残留；
       - 或用户手工记录。
     判定规则：
