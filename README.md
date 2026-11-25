@@ -1,6 +1,6 @@
 ﻿# ai-mcp · 本地 MCP 套件
 
-> 在 Windows 本地运行的一组独立 MCP Server，统一对接 Gerrit、GitHub、Jenkins、Atlassian（Jira + Confluence），由全中文总控脚本按需启停。
+> 在 Windows 本地运行的一组独立 MCP Server，统一对接 Gerrit、GitHub、Jenkins、Atlassian（Jira + Confluence），由全中文总控脚本统一配置与诊断，服务由 Host 按需以 stdio 拉起。
 
 | 项目 | 内容 |
 |---|---|
@@ -20,7 +20,8 @@
 | 项目计划书 | `docs/planning/项目计划书.md` | 背景、目标、约束、选型、范围 |
 | 里程碑规划 | `docs/planning/里程碑规划.md` | M0–M10 里程碑划分与依赖关系 |
 | 架构与决策记录 | `docs/architecture/架构与决策记录.md` | 架构决策（ADR）与取舍理由 |
-| 服务接入说明 | `docs/services/服务接入说明.md` | 四个服务的选型、配置项、能力与已知限制 |
+| 服务接入说明 | `docs/services/服务接入说明.md` | 四个服务的选型、配置段、能力与已知限制 |
+| 配置字段说明 | `docs/services/配置字段说明.md` | 统一配置 `mcp.config.json` 的字段表、参考值与填写规则 |
 | 安全与凭证管理 | `docs/security/安全与凭证管理.md` | 凭证、权限、密钥扫描与审计要求 |
 | Host 接入配置 | `docs/host/Host接入配置.md` | Cursor / Claude Desktop 等 Host 的接入示例 |
 | 任务清单 | `docs/operations/任务清单.md` | 可执行任务条目、状态、依赖、验收标准 |
@@ -36,6 +37,7 @@
 | 全局上下文 | `ai/全局上下文.md` | 项目背景、不可更改的架构决策、硬性约束 |
 | 实现提示词 | `ai/实现提示词.md` | 按里程碑拆分的可执行提示词 |
 | 交付与 PR 规范 | `ai/交付与PR规范.md` | 分支、提交、PR、自检与回执模板 |
+| 仓库开发技能 | `skills/ai-mcp-dev/SKILL.md` | 定义性开发技能：架构约束、里程碑流程、交付规范、文档管控与安全红线 |
 
 ## 二、受控服务清单
 
@@ -68,8 +70,9 @@ ai-mcp/
 
 ## 四、当前阶段
 
-- 阶段：**M0–M4 完成；M5–M8 实现与依赖接入完成，验收待执行**（需配置真实凭证后执行四服务的 Host 握手验收与连通测试；Gerrit 已在真实环境实测连通）。
-- 下一阶段：M5–M8 验收（TASK-M5-02 ~ TASK-M8-02），随后 M9（登录预检与环境自愈）。按 `docs/operations/任务清单.md` 与 `ai/实现提示词.md` 逐里程碑推进。
+- 阶段：**M0–M4 完成；M5–M8 实现与依赖接入完成，验收待执行；统一配置改造（ADR-007）完成**。四个服务与总控共用仓库根的 `mcp.config.json`：配置向导逐字段录入，启动器经 `MCP_SUITE_CONFIG` 读取，Host 配置导出自带 env；分服务配置模板已下线。Gerrit 已在真实环境完成只读连通，GitHub / Jenkins / Atlassian 的真实连通待人工验证。
+- 下一阶段：验收与留痕——DEV-001 处置决定留痕、四服务 Host 握手与连通验收（TASK-M5-02 ~ TASK-M8-02）、M9 登录预检与环境自愈、M10 Host 端到端验收。按 `docs/operations/任务清单.md` 与 `ai/实现提示词.md` 逐任务推进。
+- 快速上手：复制 `mcp.config.sample.json` 为 `mcp.config.json` 后运行 `scripts/mcpctl.ps1`（菜单 4 配置向导逐字段录入 → 菜单 5 Bootstrap 初始化依赖 → 菜单 6 导出 Host 配置）；字段含义见 `docs/services/配置字段说明.md`。
 
 ## 五、安全提示
 
