@@ -9,12 +9,12 @@ description: zeek-zhao/ai-mcp 仓库的唯一定义性开发技能。凡在本�
 |---|---|
 | 文档编号 | AI-SKILL-001 |
 | 文档名称 | AI 开发技能文件 |
-| 版本 | v1.0.0 |
+| 版本 | v1.1.0 |
 | 状态 | 生效（A） |
 | 密级 | 内部 |
 | 作者 | zeek.zhao |
 | 创建日期 | 2026-11-25 |
-| 最后更新 | 2026-11-25 |
+| 最后更新 | 2026-11-26 |
 | 关联里程碑 | M0–M10 |
 | 评审人 | 自审 |
 | 存放路径 | `skills/ai-mcp-dev/SKILL.md` |
@@ -33,6 +33,7 @@ Windows 本地多独立 MCP Server 套件：Gerrit / GitHub / Jenkins / Atlassia
 3. `docs/00-文档管理规范.md` —— 文档编号、版本、目录、变更记录规则。
 4. `docs/planning/项目计划书.md`、`docs/planning/里程碑规划.md` —— 范围与里程碑。
 5. `ai/实现提示词.md` 对应里程碑段落 + `docs/operations/任务清单.md` 对应条目。
+6. 涉及配置字段时：`docs/services/配置字段说明.md`（统一配置权威字段表）与 `docs/architecture/架构与决策记录.md` 的 ADR-007。
 
 ## 3. 不可更改的架构约束（违反即打回）
 
@@ -41,7 +42,8 @@ Windows 本地多独立 MCP Server 套件：Gerrit / GitHub / Jenkins / Atlassia
 - stdio 本地按需拉起为主形态；不使用远程托管 MCP 端点作为主路径。
 - **Jenkins 零侵入**：只通过 REST API + API Token 调用，不安装插件、不改实例配置。
 - 依赖仓库内隔离：各子服务自持 venv / node_modules 与锁定文件；不污染系统全局 Python/Node。
-- **真实凭证绝不入库**：仓库只保留 `*.sample` / `.template`；模板命名 `<服务>_config.sample.json` 或 `.env.template`。
+- **真实凭证绝不入库**：仓库只保留统一配置模板 `mcp.config.sample.json`（参考值 + `_hints` 中文提示）与 `mcp.config.schema.json`；真实配置为仓库根 `mcp.config.json`（已 gitignore）。
+- **配置集中（ADR-007）**：四个服务的运行配置只放在仓库根 `mcp.config.json`，按 `services.<key>` 分段；禁止在服务目录新建配置文件（依赖清单仍在各服务目录）。新增或调整字段须同步 sample、Schema、`docs/services/配置字段说明.md`，并保证 CI 的模板与 Schema 校验通过。
 - 写操作（投票、写评论、改 reviewer、触发构建等）保留**二次确认**闸门，优先只读模式。
 - 交互、菜单、提示、日志文案全中文（技术名词除外）。
 
@@ -75,8 +77,8 @@ Windows 本地多独立 MCP Server 套件：Gerrit / GitHub / Jenkins / Atlassia
 ## 7. 安全红线
 
 - 真实 Token / 密码 / HTTP 凭证 / 内部地址不写入仓库、日志、对话输出。
-- 凭证只写入本地被 `.gitignore` 排除的配置文件（`*_config.json`、`.env`、`credentials.env`）。
-- 保持 CI 阻断能力：模板完整性检查、真实配置跟踪检查、依赖产物跟踪检查、gitleaks 密钥扫描（PR 事件需 checkout `fetch-depth: 0` 且显式传 `GITHUB_TOKEN`）。
+- 凭证只写入本地被 `.gitignore` 排除的统一配置文件 `mcp.config.json`（仅本机可读，禁止网盘/邮件同步）；Host 配置只放 `env.MCP_SUITE_CONFIG` 路径，不放凭证。
+- 保持 CI 阻断能力：统一配置入库检查（`mcp.config.json` 被跟踪即失败）、模板与 Schema 校验、注册表自检、依赖产物跟踪检查、gitleaks 密钥扫描（PR 事件需 checkout `fetch-depth: 0` 且显式传 `GITHUB_TOKEN`）。
 - 服务账号最小权限，优先只读；写操作二次确认。
 - 曾在任何渠道暴露的凭证立即在对应系统重置，并在 `docs/operations/问题记录.md` 登记（先例 DEV-001）。
 
@@ -104,9 +106,13 @@ Windows 本地多独立 MCP Server 套件：Gerrit / GitHub / Jenkins / Atlassia
 - Python：仅使用各子服务目录内 venv 解释器；依赖锁定（requirements 锁定版本）。
 - Node：`node_modules` 固定在各子服务目录内；锁定文件（package-lock.json）入库。
 - 临时/中间脚本一律放在**仓库外**工作区临时目录，绝不提交进仓库。
+- 交互脚本防输入结束空转：`Read-Host` 返回 `$null`（标准输入已到末尾）即提示并退出，不得落入默认动作；`Read-Host -AsSecureString` 在标准输入被重定向时会永久阻塞，读取敏感字段前先判断 `[Console]::IsInputRedirected`。
+- 启动器约定：stdout 只输出 MCP 协议，诊断信息与中文报错写 stderr，失败时退出码非 0；统一读取环境变量 `MCP_SUITE_CONFIG`（未设置时回退服务目录上一级的 `mcp.config.json`），占位符或缺少配置段时拒启。
+- 提交消息与 Issue / PR 正文先写成 UTF-8 文件，再用 `git commit -F`、`gh … --input` 提交（中文弯引号会被命令行当作参数定界符）。
 
 ## 变更记录
 
 | 版本 | 日期 | 变更人 | 变更摘要 | 原因/关联条目 |
 |---|---|---|---|---|
 | v1.0.0 | 2026-11-25 | zeek.zhao | 首次建立仓库定义性开发技能文件 | 固化开发流程与约束（Issue #3） |
+| v1.1.0 | 2026-11-26 | zeek.zhao | §3 新增配置集中约束并修订模板口径；§7 安全红线与 CI 口径同步；§9 补输入结束保护、启动器与提交约定；§2 补配置字段说明 | 统一配置改造（ADR-007，T-DOC-01，Issue #57） |
