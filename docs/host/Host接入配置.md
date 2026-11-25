@@ -41,7 +41,7 @@
     },
     "jenkins": {
       "command": "<M7 回填：node.exe 路径>",
-      "args": ["<M7 回填：mcp-jenkins 仓库内启动入口>", "mcp-jenkins/jenkins_config.json"],
+      "args": ["<仓库路径>/mcp-jenkins/launcher.mjs"],
       "env": {}
     },
     "atlassian": {

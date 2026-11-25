@@ -1,0 +1,10 @@
+{
+  "name": "mcp-jenkins",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MCP Jenkins 服务依赖清单（仓库内隔离安装，node_modules 不入库）",
+  "license": "MIT",
+  "dependencies": {
+    "jenkins-mcp-server": "^1.0.3"
+  }
+}
