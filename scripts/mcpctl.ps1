@@ -15,9 +15,10 @@
     运行：pwsh / powershell 下执行 scripts\mcpctl.ps1。
 #>
 
-# 加载核心库（注册表 / 配置向导 / 启停工具）
+# 加载核心库（注册表 / 配置向导 / 启停工具 / Bootstrap）
 . (Join-Path -Path $PSScriptRoot -ChildPath 'lib\service-utils.ps1')
 . (Join-Path -Path $PSScriptRoot -ChildPath 'lib\config-wizard.ps1')
+. (Join-Path -Path $PSScriptRoot -ChildPath 'bootstrap.ps1')
 
 function Show-McpMenu {
     Clear-Host
@@ -29,7 +30,7 @@ function Show-McpMenu {
     Write-Host '  [2] 停止服务（批量 / 单选）'
     Write-Host '  [3] 查看服务状态'
     Write-Host '  [4] 服务配置向导'
-    Write-Host '  [5] 初始化运行环境（Bootstrap）—— 待 M4 提供'
+    Write-Host '  [5] 初始化运行环境（Bootstrap：检查 / 初始化 / 重建）'
     Write-Host '  [6] 各服务接入管理 —— 待 M5–M8 提供'
     Write-Host '  [7] 登录常驻管理 —— 待 M9 提供'
     Write-Host '  [8] Host 配置导出 —— 待 M10 提供'
@@ -68,7 +69,14 @@ function Invoke-McpctlMenu {
             '4' {
                 Invoke-McpConfigWizard
             }
-            '5' { Write-Host '（占位）Bootstrap 环境初始化将在 M4 提供。' }
+            '5' {
+                $mode = Read-Host 'Bootstrap 模式：[1] 仅检查环境 [2] 初始化缺失环境 [3] 重建环境'
+                switch ($mode) {
+                    '1' { Invoke-McpBootstrap -Check | Out-Null }
+                    '3' { Invoke-McpBootstrap -Rebuild | Out-Null }
+                    default { Invoke-McpBootstrap | Out-Null }
+                }
+            }
             '6' { Write-Host '（占位）各服务接入将在 M5–M8 提供。' }
             '7' { Write-Host '（占位）登录常驻管理将在 M9 提供。' }
             '8' { Write-Host '（占位）Host 配置导出将在 M10 提供。' }
