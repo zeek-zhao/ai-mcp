@@ -11,7 +11,7 @@
     字段齐全即可被所有 mcpctl 脚本识别，无需修改其他逻辑代码。
 
 .NOTES
-    字段说明（服务条目，共 9 项）：
+    字段说明（服务条目，共 10 项）：
       Code           服务代号（受控服务清单中的 A/B/C/D，唯一）
       Id             子目录名（唯一，与仓库目录一致）
       DisplayName    显示名（全中文菜单展示）
@@ -21,6 +21,8 @@
       PidFile        PID 文件路径（仓库相对路径，运行时生成）
       LogFile        日志文件路径（仓库相对路径，运行时生成）
       Stack          技术栈标识（python / node / binary，供 Bootstrap M4 与向导使用）
+      BinaryPath     可选：binary 技术栈的可执行文件路径（仓库相对路径）；缺省时按 <服务Id>.exe 探测
+      BinaryPath     可选：binary 技术栈的可执行文件路径（仓库相对路径）；缺省时按 <服务Id>.exe 探测
 #>
 
 # ---------------------------------------------------------------------------
@@ -76,6 +78,7 @@ $script:McpServices = @(
         PidFile        = 'mcp-github/run.pid'
         LogFile        = 'mcp-github/logs/service.log'
         Stack          = 'binary'
+        BinaryPath     = 'mcp-github/bin/github-mcp-server.exe'   # setup-github-mcp.ps1 下载后落位（bin/ 已 gitignore）
     },
     @{
         Code           = 'C'

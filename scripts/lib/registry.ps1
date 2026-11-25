@@ -56,6 +56,7 @@ function Get-McpServices {
             DisplayName           = $svc.DisplayName
             StartCommand          = $svc.StartCommand
             Stack                 = $svc.Stack
+            BinaryPath            = $svc['BinaryPath']
             ConfigTemplate        = $svc.ConfigTemplate
             ConfigTemplateFull    = (Join-Path $root $svc.ConfigTemplate)
             LocalConfig           = $svc.LocalConfig
