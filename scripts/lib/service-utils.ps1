@@ -27,9 +27,9 @@
     本文件不实现 Bootstrap、登录预检与真实服务命令（StartCommand 仍为注册表占位）。
 #>
 
-# 加载注册表（服务清单）与配置向导的就绪判定
+# 加载注册表（服务清单）与统一配置模块（就绪判定 / 读写）
 . (Join-Path -Path $PSScriptRoot -ChildPath 'registry.ps1')
-. (Join-Path -Path $PSScriptRoot -ChildPath 'config-wizard.ps1')
+. (Join-Path -Path $PSScriptRoot -ChildPath 'suite-config.ps1')
 
 # 遗留进程状态常量（模型一下：PID 文件只应来自历史遗留或外部拉起，mcpctl 不再写入）
 $script:McpServiceState = @{
@@ -241,22 +241,36 @@ function Test-McpDepsReady {
 
 .DESCRIPTION
     每服务输出：配置就绪 / 依赖环境 / 启动命令已回填 / 可执行文件可定位。
-    命令未回填时给出中文提示而非抛异常。
+    配置就绪取自统一配置 mcp.config.json（services.<ConfigKey> 段）；已在统一配置中
+    禁用（enabled=false）的服务单列状态“已禁用”。命令未回填时给出中文提示而非抛异常。
 #>
 function Get-McpServiceDiagnostics {
     [CmdletBinding()]
     param([AllowEmptyString()][string]$Code)
     $services = Get-McpServices
     if ($Code) { $services = $services | Where-Object { $_.Code -eq $Code.ToUpperInvariant() } }
+    $suiteReady = @{}
+    foreach ($r in (Test-McpSuiteConfigReady)) { $suiteReady[$r.Key] = $r }
     foreach ($svc in $services) {
-        $ready = (Get-McpConfigReadiness -Code $svc.Code | Select-Object -First 1)
+        $ready = $suiteReady[$svc.ConfigKey]
         $cmdFilled = Test-McpStartCommandFilled -Service $svc
         $cmdExists = if ($cmdFilled) { Test-McpCommandAvailable -Service $svc } else { $false }
         $depsReady = Test-McpDepsReady -Service $svc
 
         $hint = ''
-        if (-not $ready.Ready) {
-            $hint = '配置未就绪（缺失：' + ($ready.Missing -join ', ') + '），请先运行配置向导'
+        if ($ready.State -eq '已禁用') {
+            $hint = '已在统一配置中禁用（enabled=false）：不参与握手、导出与批量启动'
+        }
+        elseif (-not $ready.FileExists) {
+            $hint = '统一配置文件不存在：请复制模板 mcp.config.sample.json 为 mcp.config.json 后填写'
+        }
+        elseif (-not $ready.FileValid) {
+            $hint = $ready.Reason
+        }
+        elseif (-not $ready.Ready) {
+            $hint = '配置未就绪（' + $ready.Reason
+            if (@($ready.Missing).Count -gt 0) { $hint += '，缺失：' + (@($ready.Missing) -join ', ') }
+            $hint += '），请先编辑 mcp.config.json'
         }
         elseif (-not $cmdFilled) {
             $hint = '启动命令未配置：请检查 scripts/mcpctl.config.ps1 中该服务的 StartCommand（缺失时请参照已接入服务补全，随后运行 Bootstrap 准备依赖环境）'
@@ -276,10 +290,12 @@ function Get-McpServiceDiagnostics {
             Id             = $svc.Id
             DisplayName    = $svc.DisplayName
             ConfigReady    = $ready.Ready
+            ConfigEnabled  = $ready.Enabled
+            ConfigState    = $ready.State
             DepsReady      = $depsReady
             CommandFilled  = $cmdFilled
             CommandExists  = $cmdExists
-            MissingFields  = ($ready.Missing -join ', ')
+            MissingFields  = (@($ready.Missing) -join ', ')
             Hint           = $hint
         }
     }
@@ -296,7 +312,7 @@ function Show-McpServiceDiagnostics {
         [pscustomobject]@{
             '代号'             = $_.Code
             '服务'             = $_.DisplayName
-            '配置就绪'         = if ($_.ConfigReady) { '是' } else { '否' }
+            '配置就绪'         = if ($_.ConfigState -eq '已禁用') { '已禁用' } elseif ($_.ConfigReady) { '是' } else { '否' }
             '依赖环境'         = if ($_.DepsReady) { '已就绪' } else { '未初始化' }
             '启动命令已回填'   = if ($_.CommandFilled) { '是' } else { '否' }
             '可执行文件'       = if ($_.CommandExists) { '可定位' } else { '不可定位' }
@@ -513,7 +529,7 @@ function Show-McpServiceStatus {
         [pscustomobject]@{
             '代号'           = $_.Code
             '服务'           = $_.DisplayName
-            '配置就绪'       = if ($d -and $d.ConfigReady) { '是' } else { '否' }
+            '配置就绪'       = if ($d -and $d.ConfigState -eq '已禁用') { '已禁用' } elseif ($d -and $d.ConfigReady) { '是' } else { '否' }
             '依赖环境'       = if ($d -and $d.DepsReady) { '已就绪' } else { '未初始化' }
             '启动命令已回填' = if ($d -and $d.CommandFilled) { '是' } else { '否' }
             '遗留进程'       = $_.State
