@@ -45,8 +45,8 @@
       "env": {}
     },
     "atlassian": {
-      "command": "<M8 回填：mcp-atlassian 仓库内 venv 的 mcp-atlassian.exe 路径>",
-      "args": ["-j", "<本地 jira 地址占位>", "-c", "<本地 confluence 地址占位>", "-t", "<本地 PAT 占位，禁止明文>"],
+      "command": "<本地路径>\\ai-mcp\\mcp-atlassian\\venv\\Scripts\\python.exe（先运行 scripts/bootstrap.ps1 初始化）",
+      "args": ["<本地路径>\\ai-mcp\\mcp-atlassian\\launcher.py"],
       "env": {}
     }
   }
