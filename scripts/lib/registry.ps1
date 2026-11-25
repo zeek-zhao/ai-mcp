@@ -11,7 +11,8 @@
         . (Join-Path $PSScriptRoot 'lib\registry.ps1')
 
 .NOTES
-    本文件只提供【读取类】基础函数；启动/停止等业务逻辑见后续里程碑（M3+）。
+    本文件只提供【读取类】基础函数；服务进程不由 mcpctl 托管（ADR-006），诊断与握手探活见 service-utils.ps1。
+    Test-McpRegistry 会校验注册表的 ConfigKey 与统一配置模板 mcp.config.sample.json 的 services 键一致。
 #>
 
 # 加载数据源（服务注册表与全局参数）
@@ -91,7 +92,8 @@ function Resolve-McpStartCommand {
     将注册表哈希表转换为 PSCustomObject 列表返回；每条目额外附加
     *Full 后缀的绝对路径字段（基于仓库根解析），供后续脚本直接使用。
     StartCommand 输出前经 Resolve-McpStartCommand 归一化（仓库内相对路径
-    转绝对路径，PATH 命令保留原名）。
+    转绝对路径，PATH 命令保留原名）。ConfigKey 为统一配置 mcp.config.json 中
+    services 下的段名，配置内容的读写见 suite-config.ps1。
 
 .OUTPUTS
     System.Management.Automation.PSCustomObject[]
@@ -104,12 +106,9 @@ function Get-McpServices {
             Id                    = $svc.Id
             DisplayName           = $svc.DisplayName
             StartCommand          = (Resolve-McpStartCommand -Command $svc.StartCommand)
+            ConfigKey             = $svc.ConfigKey
             Stack                 = $svc.Stack
             BinaryPath            = $svc['BinaryPath']
-            ConfigTemplate        = $svc.ConfigTemplate
-            ConfigTemplateFull    = (Join-Path $root $svc.ConfigTemplate)
-            LocalConfig           = $svc.LocalConfig
-            LocalConfigFull       = (Join-Path $root $svc.LocalConfig)
             PidFile               = $svc.PidFile
             PidFileFull           = (Join-Path $root $svc.PidFile)
             LogFile               = $svc.LogFile
@@ -129,6 +128,7 @@ function Get-McpServiceByCode {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
         [string]$Code
     )
     Get-McpServices | Where-Object { $_.Code -eq $Code.ToUpperInvariant() }
@@ -145,6 +145,7 @@ function Get-McpServiceById {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
         [string]$Id
     )
     Get-McpServices | Where-Object { $_.Id -eq $Id.ToLowerInvariant() }
@@ -155,31 +156,34 @@ function Get-McpServiceById {
     校验注册表数据完整性（自检用）。
 
 .DESCRIPTION
-    检查每个条目的 9 个必填字段是否存在且合法（代号/子目录名唯一、
-    相对路径不含 .. 越级等）。返回不合规条目列表，全部合规时返回空数组。
+    检查每个条目的 8 个必填字段是否存在且合法（代号/子目录名/ConfigKey 唯一、
+    相对路径不越级等），并校验 ConfigKey 与统一配置模板 mcp.config.sample.json
+    的 services 键双向一致。返回不合规描述列表，全部合规时返回空数组。
 
 .OUTPUTS
     System.String[]  # 违规描述；为空表示全部合规
 #>
 function Test-McpRegistry {
-    $requiredFields = @('Code','Id','DisplayName','StartCommand','ConfigTemplate','LocalConfig','PidFile','LogFile','Stack')
+    $requiredFields = @('Code','Id','DisplayName','StartCommand','ConfigKey','PidFile','LogFile','Stack')
     $knownStacks = @('python','node','binary')
     $problems = @()
 
     $codes = @()
     $ids = @()
+    $keys = @()
     foreach ($svc in $script:McpServices) {
         foreach ($f in $requiredFields) {
-            if (-not $svc.ContainsKey($f)) {
+            if (-not $svc.ContainsKey($f) -or [string]::IsNullOrWhiteSpace("$($svc[$f])")) {
                 $problems += ("条目 {0}: 缺少字段 {1}" -f $svc['Id'], $f)
             }
         }
         $codes += $svc['Code']
         $ids += $svc['Id']
+        if ($svc.ContainsKey('ConfigKey') -and $svc['ConfigKey']) { $keys += "$($svc['ConfigKey'])".ToLowerInvariant() }
         if ($knownStacks -notcontains $svc['Stack']) {
             $problems += ("条目 {0}: 未知技术栈 {1}（允许：{2}）" -f $svc['Id'], $svc['Stack'], ($knownStacks -join '/'))
         }
-        foreach ($p in @('ConfigTemplate','LocalConfig','PidFile','LogFile')) {
+        foreach ($p in @('PidFile','LogFile')) {
             if ($svc.ContainsKey($p) -and ($svc[$p] -match '\.\.[\\/]' -or [IO.Path]::IsPathRooted($svc[$p]))) {
                 $problems += ("条目 {0}: {1} 必须是不越级的仓库相对路径，当前为 {2}" -f $svc['Id'], $p, $svc[$p])
             }
@@ -189,6 +193,44 @@ function Test-McpRegistry {
     if ($dupCodes) { $problems += ("服务代号重复：{0}" -f (($dupCodes | ForEach-Object Name) -join ', ')) }
     $dupIds = $ids | Group-Object | Where-Object { $_.Count -gt 1 }
     if ($dupIds) { $problems += ("子目录名重复：{0}" -f (($dupIds | ForEach-Object Name) -join ', ')) }
+    $dupKeys = $keys | Group-Object | Where-Object { $_.Count -gt 1 }
+    if ($dupKeys) { $problems += ("ConfigKey 重复：{0}" -f (($dupKeys | ForEach-Object Name) -join ', ')) }
+
+    # 全局参数：统一配置路径必须是不越级的仓库相对路径
+    $global = $script:McpCtlGlobal
+    $suitePath = if ($global.ContainsKey('SuiteConfigPath')) { "$($global['SuiteConfigPath'])" } else { '' }
+    if ([string]::IsNullOrWhiteSpace($suitePath) -or $suitePath -match '\.\.[\\/]' -or [IO.Path]::IsPathRooted($suitePath)) {
+        $problems += "全局参数 SuiteConfigPath 必须是不越级的仓库相对路径，当前为：$suitePath"
+    }
+
+    # ConfigKey 与统一配置模板的 services 键双向一致
+    $sampleRelative = 'mcp.config.sample.json'
+    $samplePath = Join-Path $script:McpCtlGlobal.RepoRoot $sampleRelative
+    $sampleKeys = @()
+    if (-not (Test-Path -LiteralPath $samplePath -PathType Leaf)) {
+        $problems += "统一配置模板不存在：$sampleRelative"
+    }
+    else {
+        try {
+            $sample = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($samplePath, [Text.Encoding]::UTF8)) -ErrorAction Stop
+            if ($sample.services) {
+                $sampleKeys = @($sample.services.PSObject.Properties | ForEach-Object { $_.Name.ToLowerInvariant() })
+            }
+        }
+        catch {
+            $problems += "统一配置模板不是合法 JSON：$sampleRelative"
+        }
+        foreach ($k in $keys) {
+            if ($sampleKeys.Count -gt 0 -and $sampleKeys -notcontains $k) {
+                $problems += ("ConfigKey {0} 在 {1} 的 services 中不存在" -f $k, $sampleRelative)
+            }
+        }
+        foreach ($k in $sampleKeys) {
+            if ($keys -notcontains $k) {
+                $problems += ("{0} 的 services.{1} 在注册表中没有对应条目" -f $sampleRelative, $k)
+            }
+        }
+    }
 
     return $problems
 }
