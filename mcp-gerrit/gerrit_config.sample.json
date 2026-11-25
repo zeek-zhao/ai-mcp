@@ -1,7 +1,14 @@
 {
-  "baseUrl": "<https://gerrit.example.com>",
-  "authMethod": "http-password",
-  "username": "<your-username>",
-  "credential": "<your-credential-or-token>",
-  "instances": []
+  "default_gerrit_base_url": "<https://gerrit.example.com/>",
+  "gerrit_hosts": [
+    {
+      "name": "<实例显示名称>",
+      "external_url": "<https://gerrit.example.com/>",
+      "authentication": {
+        "type": "http_basic",
+        "username": "<用户名>",
+        "auth_token": "<HTTP 凭证（Gerrit 设置中的 HTTP Password）>"
+      }
+    }
+  ]
 }
