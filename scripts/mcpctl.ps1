@@ -10,7 +10,7 @@
       3. 查看服务状态（配置就绪 / 依赖环境 / 启动命令 / 遗留进程 / 日志位置）
       4. 配置向导（统一配置 mcp.config.json：逐字段录入、从旧配置导入、连通性测试）
       5. 初始化运行环境 Bootstrap（M4：检查 / 初始化 / 重建）
-      6. 导出 Host 配置（stdio 配置片段写入仓库外本地文件，不含明文凭证）
+      6. 导出 Host 配置（stdio 配置片段写入仓库外本地文件，不含明文凭证；条目带 env.MCP_SUITE_CONFIG，已禁用的服务不导出）
       7. 登录预检（占位，M9 按“登录预检与环境自愈”重定义后提供）
     MCP 服务本体由 Host（Cursor / Claude Desktop 等）按需 stdio 拉起，
     mcpctl 不启动、不停止、不托管服务进程。
@@ -44,15 +44,34 @@ function Show-McpMenu {
 <#
 .SYNOPSIS
     导出 Host stdio 配置片段到本地文件（默认仓库外，不含明文凭证）。
+
+.DESCRIPTION
+    每个服务条目包含 command / args / env / note：
+      - command、args：已归一化的本机绝对路径启动命令（服务由 Host 按需 stdio 拉起）；
+      - env.MCP_SUITE_CONFIG：统一配置文件（mcp.config.json）的本机绝对路径，启动器据此读取配置；
+      - note：配置来源与就绪状态的中文说明。
+    在统一配置中禁用（enabled=false）的服务不导出。导出文件只含配置文件路径，不含任何凭证。
 #>
 function Invoke-McpHostConfigExport {
+    $suitePath = Get-McpSuiteConfigPath
     $defaultPath = Join-Path $env:USERPROFILE 'mcp-host-config.json'
     $target = Read-Host ("输出文件路径（默认：{0}）" -f $defaultPath)
+    if ($null -eq $target) {
+        # 标准输入已结束（Read-Host 返回 $null）：直接返回，避免误用默认路径写出文件
+        Write-Host '输入已关闭，未导出。'
+        return
+    }
     if (-not $target) { $target = $defaultPath }
 
     $servers = [ordered]@{}
+    $skipped = New-Object System.Collections.Generic.List[string]
     foreach ($svc in (Get-McpServices)) {
         $ready = Test-McpSuiteConfigReady -Key $svc.ConfigKey | Select-Object -First 1
+        if ($ready.State -eq '已禁用') {
+            # enabled=false：不进导出结果（与状态表、批量启动的口径一致）
+            $skipped.Add($svc.DisplayName)
+            continue
+        }
         $entry = [ordered]@{}
         if ((Test-McpStartCommandFilled -Service $svc) -and (Test-McpCommandAvailable -Service $svc)) {
             # StartCommand 已在 Get-McpServices 出口归一化（仓库内相对路径→绝对路径，PATH 命令保留原名）
@@ -65,16 +84,22 @@ function Invoke-McpHostConfigExport {
             $entry['command'] = "<未回填>"
             $entry['args'] = @()
         }
-        # env 不导出（凭证只保存在统一配置文件，绝不写明文到导出文件）
-        $stateText = if ($ready.Ready) { '已就绪' }
-            elseif ($ready.State -eq '已禁用') { '已禁用' }
-            else { '未就绪，请先运行配置向导（菜单 4）' }
-        $entry['note'] = ("配置来源：{0}（{1}；含凭证，仅保存在该本地文件）" -f (Get-McpSuiteConfigPath), $stateText)
+        # 统一配置路径经环境变量传给启动器；凭证只保存在统一配置文件中，导出文件不写任何明文凭证
+        $entry['env'] = [ordered]@{ MCP_SUITE_CONFIG = $suitePath }
+        $stateText = if ($ready.Ready) { '已就绪' } else { '未就绪，请先运行配置向导（菜单 4）' }
+        $entry['note'] = ("配置来源：{0}（{1}；含凭证，不入库）" -f $suitePath, $stateText)
         $servers[$svc.Id] = $entry
+    }
+    if ($skipped.Count -gt 0) {
+        Write-Host ("已跳过（在统一配置中禁用，enabled=false）：{0}" -f ($skipped -join '、'))
+    }
+    if ($servers.Count -eq 0) {
+        Write-Host '没有可导出的服务：全部服务均已在统一配置中禁用。'
+        return
     }
 
     $doc = [ordered]@{
-        '_说明' = 'Host（Cursor / Claude Desktop 等）stdio 拉起配置片段；服务由 Host 按需启动，mcpctl 不托管进程。'
+        '_说明' = 'Host（Cursor / Claude Desktop 等）stdio 拉起配置片段；服务由 Host 按需启动，mcpctl 不托管进程。每个条目的 env.MCP_SUITE_CONFIG 指向统一配置文件（含凭证，不入库）。'
         'mcpServers' = $servers
     }
     # 未就绪/未回填服务的中文告警汇总
@@ -83,7 +108,9 @@ function Invoke-McpHostConfigExport {
         Write-Host ("告警：以下服务启动命令不可定位或未配置：{0}" -f (($notReady | ForEach-Object { $_.Id }) -join '、'))
         Write-Host "下一步：检查 scripts/mcpctl.config.ps1 的 StartCommand；Python/Node 服务先运行 Bootstrap；GitHub 服务先运行 mcp-github/setup-github-mcp.ps1。"
     }
-    $json = $doc | ConvertTo-Json -Depth 10
+    # 用统一配置模块的序列化：2 空格缩进、保持键顺序、中文原样（PowerShell 5.1 与 7 输出一致）
+    # 注意：-Depth 是该函数递归时使用的“当前缩进层级”，顶层调用不要传
+    $json = (ConvertTo-McpJsonString -Value $doc) + "`n"
     $targetDir = Split-Path -Parent $target
     if ($targetDir -and -not (Test-Path -LiteralPath $targetDir)) {
         New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
@@ -91,8 +118,8 @@ function Invoke-McpHostConfigExport {
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [IO.File]::WriteAllText($target, $json, $utf8NoBom)
     Write-Host ("已导出 Host 配置片段：{0}（仓库外文件，不含明文凭证）" -f $target)
-    Write-Host "注意：command/args 已转换为本机绝对路径；迁移到其他机器后需重新运行本导出。"
-    Write-McpOpsLog -Action '导出Host配置' -Service '-' -Detail $target
+    Write-Host "注意：command/args 与 env.MCP_SUITE_CONFIG 均为本机绝对路径；迁移到其他机器后需重新运行本导出。"
+    Write-McpOpsLog -Action '导出Host配置' -Service '-' -Detail ("导出 {0} 个服务、跳过已禁用 {1} 个 → {2}" -f $servers.Count, $skipped.Count, $target)
 }
 
 function Invoke-McpctlMenu {
