@@ -35,9 +35,9 @@
       "env": {}
     },
     "github": {
-      "command": "<M6 回填：仓库内 github-mcp-server 可执行文件路径>",
-      "args": ["stdio", "--read-only"],
-      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "<运行时由本地 .env 注入，禁止在此明文>" }
+      "command": "<node.exe 路径>",
+      "args": ["<仓库路径>/mcp-github/launcher.mjs"],
+      "env": {}
     },
     "jenkins": {
       "command": "<M7 回填：node.exe 路径>",

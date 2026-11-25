@@ -210,7 +210,7 @@ function Test-McpCommandAvailable {
 
 <#
 .SYNOPSIS
-    判断依赖环境是否已初始化（python→venv；node→node_modules；binary→<服务Id>.exe）。
+    判断依赖环境是否已初始化（python→venv；node→node_modules；binary→BinaryPath 或 <服务Id>.exe）。
 #>
 function Test-McpDepsReady {
     [CmdletBinding()]
@@ -226,6 +226,9 @@ function Test-McpDepsReady {
                     (@(Get-ChildItem -LiteralPath $nm -ErrorAction SilentlyContinue).Count -gt 0))
         }
         'binary' {
+            if ($Service.BinaryPath) {
+                return (Test-Path -LiteralPath (Join-Path (Get-McpRepoRoot) $Service.BinaryPath) -PathType Leaf)
+            }
             return (Test-Path -LiteralPath (Join-Path $svcDir ("{0}.exe" -f $Service.Id)) -PathType Leaf)
         }
         default { return $false }

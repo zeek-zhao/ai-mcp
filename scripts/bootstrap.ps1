@@ -244,7 +244,12 @@ function Invoke-McpBootstrap {
                 }
             }
             'binary' {
-                $binFile = Join-Path $svcDir ("{0}.exe" -f $svc.Id)
+                if ($svc.BinaryPath) {
+                    $binFile = Join-Path (Get-McpRepoRoot) $svc.BinaryPath
+                }
+                else {
+                    $binFile = Join-Path $svcDir ("{0}.exe" -f $svc.Id)
+                }
                 if (Test-Path -LiteralPath $binFile) {
                     $action = $script:McpBootstrapAction.Ready
                     $note = '本地二进制已就位'
@@ -255,7 +260,7 @@ function Invoke-McpBootstrap {
                 }
                 else {
                     $action = $script:McpBootstrapAction.Skipped
-                    $note = '本地二进制未放置（服务接入里程碑提供获取脚本或说明后按指引放置）'
+                    $note = '本地二进制未放置。下一步：运行服务目录下的 setup 获取脚本（如 mcp-github/setup-github-mcp.ps1）'
                 }
             }
             default {

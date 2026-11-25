@@ -18,6 +18,7 @@ run.pid
 .venv/
 venv/
 node_modules/
+bin/
 __pycache__/
 *.pyc
 .pytest_cache/
