@@ -262,7 +262,7 @@ function Get-McpServiceDiagnostics {
             $hint = '已在统一配置中禁用（enabled=false）：不参与握手、导出与批量启动'
         }
         elseif (-not $ready.FileExists) {
-            $hint = '统一配置文件不存在：请复制模板 mcp.config.sample.json 为 mcp.config.json 后填写'
+            $hint = '统一配置文件不存在：请运行配置向导（菜单 4），从模板生成 mcp.config.json 并逐字段录入'
         }
         elseif (-not $ready.FileValid) {
             $hint = $ready.Reason
@@ -270,7 +270,7 @@ function Get-McpServiceDiagnostics {
         elseif (-not $ready.Ready) {
             $hint = '配置未就绪（' + $ready.Reason
             if (@($ready.Missing).Count -gt 0) { $hint += '，缺失：' + (@($ready.Missing) -join ', ') }
-            $hint += '），请先编辑 mcp.config.json'
+            $hint += '），请运行配置向导（菜单 4）补齐，或直接编辑 mcp.config.json'
         }
         elseif (-not $cmdFilled) {
             $hint = '启动命令未配置：请检查 scripts/mcpctl.config.ps1 中该服务的 StartCommand（缺失时请参照已接入服务补全，随后运行 Bootstrap 准备依赖环境）'
