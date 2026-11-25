@@ -34,6 +34,33 @@ jobs:
             exit 1
           fi
 
+      - name: 注册表 StartCommand 防回归检查
+        run: |
+          set -e
+          # 四服务 StartCommand 必须已回填（不得为 $null 或 <> 占位）
+          if grep -q 'StartCommand   = \$null' scripts/mcpctl.config.ps1; then
+            echo "::error::注册表存在未回填的 StartCommand（\$null）"
+            exit 1
+          fi
+          n=$(grep -c 'StartCommand   = @(' scripts/mcpctl.config.ps1 || true)
+          if [ "$n" -lt 4 ]; then
+            echo "::error::StartCommand 已回填条目数不足 4（当前 ${n}）"
+            exit 1
+          fi
+          if grep -q '<待' scripts/mcpctl.config.ps1; then
+            echo "::error::注册表仍含 <待…> 占位符"
+            exit 1
+          fi
+
+      - name: JSON 配置模板可解析校验
+        run: |
+          set -e
+          # .env.template 非 JSON，跳过；其余 *_config.sample.json 必须能被 json.load 解析
+          for f in mcp-gerrit/gerrit_config.sample.json mcp-jenkins/jenkins_config.sample.json mcp-atlassian/atlassian_config.sample.json; do
+            python3 -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8-sig'))" "$f" \
+              || { echo "::error::JSON 模板解析失败: $f"; exit 1; }
+          done
+
       - name: 禁止跟踪依赖目录与运行时产物
         run: |
           if git ls-files | grep -E '(node_modules/|\.venv/|venv/|logs/|\.pid$|\.log$)'; then

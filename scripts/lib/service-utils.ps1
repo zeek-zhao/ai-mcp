@@ -259,7 +259,7 @@ function Get-McpServiceDiagnostics {
             $hint = '配置未就绪（缺失：' + ($ready.Missing -join ', ') + '），请先运行配置向导'
         }
         elseif (-not $cmdFilled) {
-            $hint = '启动命令未回填（M5–M8 接入里程碑回填注册表 StartCommand 后可探活）'
+            $hint = '启动命令未配置：请检查 scripts/mcpctl.config.ps1 中该服务的 StartCommand（缺失时请参照已接入服务补全，随后运行 Bootstrap 准备依赖环境）'
         }
         elseif (-not $cmdExists) {
             $hint = '可执行文件不存在或不在 PATH（检查安装与注册表命令首段）'
@@ -332,7 +332,7 @@ function Invoke-McpHandshakeProbe {
     $head = if ($Quiet) { { param($m) } } else { { param($m) Write-Host $m } }
 
     if (-not (Test-McpStartCommandFilled -Service $Service)) {
-        & $head ("[探活跳过] {0}：启动命令未回填（M5–M8 接入里程碑回填后可用）。" -f $Service.DisplayName)
+        & $head ("[探活跳过] {0}：启动命令未配置，请检查 scripts/mcpctl.config.ps1 中该服务的 StartCommand。" -f $Service.DisplayName)
         Write-McpOpsLog -Action '探活跳过' -Service $Service.Id -Detail 'StartCommand占位'
         return [pscustomobject]@{ Code = $Service.Code; Probed = $false; Ok = $false; Reason = 'no-command' }
     }
