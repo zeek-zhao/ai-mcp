@@ -19,9 +19,26 @@ jobs:
           # gitleaks 对 PR 事件按提交范围扫描（首提交^..head），需要完整历史
           fetch-depth: 0
 
+      - name: 统一配置入库检查
+        run: |
+          set -e
+          # 统一配置改造（T-CFG-01）：仓库只保留模板与 Schema；真实配置 mcp.config.json 含凭证，不得被 Git 跟踪
+          test -f mcp.config.sample.json || { echo "::error::缺少统一配置模板 mcp.config.sample.json"; exit 1; }
+          test -f mcp.config.schema.json || { echo "::error::缺少统一配置 Schema mcp.config.schema.json"; exit 1; }
+
+          # 用法：git ls-files | has_tracked_suite_config；跟踪清单中出现 mcp.config.json（任意目录）即返回 0
+          has_tracked_suite_config() { grep -E '(^|/)mcp\.config\.json$' >/dev/null; }
+
+          if git ls-files | has_tracked_suite_config; then
+            echo "::error::检测到真实统一配置 mcp.config.json 被 Git 跟踪（该文件含凭证，已被 .gitignore 排除）。请执行：git rm --cached mcp.config.json"
+            exit 1
+          fi
+          echo "统一配置入库检查通过：mcp.config.json 未被跟踪"
+
       - name: 模板完整性检查
         run: |
           set -e
+          # 过渡：以下 4 行为分服务配置模板的存在性检查，T-DOC-02 下线模板时删除（保留下方真实本地配置不得被跟踪的检查）
           # 各服务模板必须存在；缺失即为错误（DEV-007 整改：warning 升级为 error 并失败）
           test -f mcp-gerrit/gerrit_config.sample.json || { echo "::error::mcp-gerrit 模板缺失（期望 mcp-gerrit/gerrit_config.sample.json）"; exit 1; }
           test -f mcp-github/.env.template || { echo "::error::mcp-github 模板缺失（期望 mcp-github/.env.template）"; exit 1; }
@@ -52,14 +69,176 @@ jobs:
             exit 1
           fi
 
+      - name: 统一配置模板与 Schema 校验
+        run: |
+          set -e
+          # Runner 未预装 jsonschema 时临时安装（--break-system-packages 用于兜底系统 Python 的 PEP 668 限制）
+          python3 -c "import jsonschema" 2>/dev/null || python3 -m pip install --quiet jsonschema || python3 -m pip install --quiet --break-system-packages jsonschema
+          python3 - <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          import jsonschema
+
+          # 契约：四服务顺序固定；必填集合与 docs/services/配置字段说明.md 的“必填”列一致
+          SERVICES = ["gerrit", "github", "jenkins", "atlassian"]
+          EXPECTED_REQUIRED = {
+              "gerrit": ["enabled", "baseUrl", "username", "httpPassword"],
+              "github": ["enabled", "baseUrl", "pat"],
+              "jenkins": ["enabled", "baseUrl", "username", "apiToken"],
+              "atlassian": ["enabled", "deployment", "jiraBaseUrl", "confluenceBaseUrl", "personalAccessToken"],
+          }
+
+          errors = []
+
+
+          def fail(message):
+              errors.append(message)
+
+
+          def load(name):
+              path = Path(name)
+              if not path.is_file():
+                  fail(f"缺少 {name}")
+                  return None
+              try:
+                  return json.loads(path.read_text(encoding="utf-8-sig"))
+              except (OSError, ValueError) as exc:
+                  fail(f"{name} 不是合法 JSON（{exc.__class__.__name__}）")
+                  return None
+
+
+          sample = load("mcp.config.sample.json")
+          schema = load("mcp.config.schema.json")
+          services = {}
+          hints = {}
+          field_paths = []
+
+          if sample is not None:
+              if not isinstance(sample, dict):
+                  fail("mcp.config.sample.json 的顶层必须是 JSON 对象")
+                  sample = {}
+              if sample.get("configVersion") != 1:
+                  fail(f"sample 的 configVersion 必须为 1（当前：{sample.get('configVersion')!r}）")
+              services = sample.get("services")
+              if not isinstance(services, dict):
+                  fail("sample 缺少 services 对象")
+                  services = {}
+              elif list(services) != SERVICES:
+                  fail(f"sample 的 services 必须依次包含 {SERVICES}（当前：{list(services)}）")
+              hints = sample.get("_hints")
+              if not isinstance(hints, dict):
+                  fail("sample 缺少 _hints 对象")
+                  hints = {}
+
+          for name in SERVICES:
+              if isinstance(services.get(name), dict):
+                  field_paths.extend(f"services.{name}.{field}" for field in services[name])
+
+          # 1) Schema 的必填集合与契约一致；sample 的每个配置段与 Schema 定义的字段完全相同（沿 $ref 取实际定义）
+          def resolve(node):
+              hops = 0
+              while isinstance(node, dict) and "$ref" in node:
+                  ref = node["$ref"]
+                  parts = ref[2:].split("/") if isinstance(ref, str) and ref.startswith("#/") else None
+                  target = schema if parts else None
+                  for part in parts or []:
+                      if not isinstance(target, dict) or part not in target:
+                          target = None
+                          break
+                      target = target[part]
+                  if target is None:
+                      fail(f"Schema 引用无法解析：{ref}")
+                      return {}
+                  node = target
+                  hops += 1
+                  if hops > 20:
+                      fail(f"Schema 引用层数过深：{ref}")
+                      return {}
+              return node if isinstance(node, dict) else {}
+
+          if schema is not None:
+              if not isinstance(schema, dict):
+                  fail("mcp.config.schema.json 的顶层必须是 JSON 对象")
+                  schema = {}
+              schema_services = resolve(schema.get("properties", {}).get("services"))
+              if not schema_services:
+                  fail("Schema 缺少 services 定义")
+              else:
+                  if sorted(schema_services.get("required", [])) != sorted(SERVICES):
+                      fail(f"Schema 要求的服务段 {sorted(schema_services.get('required', []))} 与契约 {sorted(SERVICES)} 不一致")
+                  for name in SERVICES:
+                      expected = sorted(EXPECTED_REQUIRED[name])
+                      service_schema = resolve(schema_services.get("properties", {}).get(name))
+                      if not service_schema:
+                          fail(f"Schema 缺少 services.{name} 定义")
+                          continue
+                      required = sorted(service_schema.get("required", []))
+                      if required != expected:
+                          fail(f"Schema 对 services.{name} 的必填集合 {required} 与契约 {expected} 不一致")
+                      section = services.get(name)
+                      if not isinstance(section, dict):
+                          continue
+                      missing = [field for field in expected if field not in section]
+                      if missing:
+                          fail(f"sample 的 services.{name} 缺少必填字段 {missing}")
+                      schema_fields = sorted(service_schema.get("properties", {}))
+                      if sorted(section) != schema_fields:
+                          fail(f"sample 的 services.{name} 字段 {sorted(section)} 与 Schema 定义 {schema_fields} 不一致")
+
+          # 2) _hints 覆盖 sample 中的全部字段路径（每个字段一条中文提示）
+          for path in field_paths:
+              hint = hints.get(path)
+              if not isinstance(hint, str) or not hint.strip():
+                  fail(f"sample 的 _hints 缺少字段 {path} 的中文提示")
+          stale = sorted(set(hints) - set(field_paths))
+          if stale:
+              fail(f"sample 的 _hints 含未知字段路径 {stale}")
+
+          # 3) 用 Schema 校验 sample
+          if schema:
+              try:
+                  jsonschema.Draft7Validator.check_schema(schema)
+              except jsonschema.exceptions.SchemaError as exc:
+                  fail(f"mcp.config.schema.json 自身不合法：{exc.message}")
+              else:
+                  validator = jsonschema.Draft7Validator(schema)
+                  for error in sorted(validator.iter_errors(sample or {}), key=lambda item: list(map(str, item.absolute_path))):
+                      where = ".".join(map(str, error.absolute_path)) or "<根>"
+                      fail(f"sample 未通过 Schema 校验（{where}）：{error.message}".replace("\n", " "))
+
+          for message in errors:
+              print(f"::error::{message}")
+          if errors:
+              print(f"统一配置校验失败：共 {len(errors)} 项问题")
+              sys.exit(1)
+          print(f"统一配置校验通过：{len(field_paths)} 个字段均有中文提示；Schema 必填集合与契约一致；sample 通过 Schema 校验")
+          PY
+
       - name: JSON 配置模板可解析校验
         run: |
           set -e
+          # 过渡：以下为分服务配置模板的可解析校验，T-DOC-02 下线模板时删除本步骤（统一配置的校验见上一步骤）
           # .env.template 非 JSON，跳过；其余 *_config.sample.json 必须能被 json.load 解析
           for f in mcp-gerrit/gerrit_config.sample.json mcp-jenkins/jenkins_config.sample.json mcp-atlassian/atlassian_config.sample.json; do
             python3 -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8-sig'))" "$f" \
               || { echo "::error::JSON 模板解析失败: $f"; exit 1; }
           done
+
+      - name: 旧配置引用检查（过渡）
+        # TODO(T-DOC-02)：分服务配置模板下线后移除 continue-on-error，本检查改为强制
+        continue-on-error: true
+        run: |
+          # 统一配置改造后，仓库不应再引用分服务配置文件（统一改为仓库根 mcp.config.json）
+          # 豁免：历史记录（更新记录、问题记录）只追加不改写；.gitignore 保留旧文件名的忽略规则；本步骤自身的检索模式
+          hits=$(git -c core.quotepath=off grep -n -E 'gerrit_config\.json|jenkins_config\.json|atlassian_config\.json|\.env\.template' -- . ':!docs/operations/更新记录.md' ':!docs/operations/问题记录.md' ':!.gitignore' ':!.github/workflows/ci.yml' || true)
+          if [ -n "$hits" ]; then
+            echo "::warning::仍存在对分服务配置文件的引用，待 T-DOC-02 清理后本检查转为强制："
+            printf '%s\n' "$hits"
+            exit 1
+          fi
+          echo "无分服务配置文件引用"
 
       - name: 禁止跟踪依赖目录与运行时产物
         run: |
@@ -74,6 +253,8 @@ jobs:
             for f in $(find scripts -name '*.ps1'); do
               pwsh -NoProfile -Command "\$tok = \$null; \$errs = \$null; \$null = [System.Management.Automation.Language.Parser]::ParseFile('$f', [ref]\$tok, [ref]\$errs); if (\$errs.Count) { \$errs | ForEach-Object { Write-Host \$_.Message }; exit 1 }"
             done
+            # 注册表自检：必填字段齐全、ConfigKey 唯一且与 mcp.config.sample.json 的 services 键一致
+            pwsh -NoProfile -Command ". ./scripts/lib/registry.ps1; \$problems = @(Test-McpRegistry); if (\$problems.Count -gt 0) { \$problems | ForEach-Object { Write-Host \"::error::\$_\" }; exit 1 }; Write-Host '注册表自检通过'"
           else
             echo "::notice::当前 Runner 无 pwsh，跳过 PowerShell 语法解析"
           fi
