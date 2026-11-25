@@ -38,11 +38,60 @@ function Get-McpGlobalConfig {
 
 <#
 .SYNOPSIS
+    将注册表的仓库相对路径 StartCommand 归一化为可执行形态（唯一实现点）。
+
+.DESCRIPTION
+    规则（内存中归一化，注册表文件仍保存相对路径）：
+      [0] command：
+        - 已是绝对路径 → 原样返回；
+        - 否则若 <仓库根>/<command> 存在 → 转为绝对路径；
+        - 否则若可在 PATH 中命中（如 node）→ 保留原名，交给 PATH 解析；
+        - 否则原样保留，由诊断给出“不可定位”提示。
+      [1..n] args：
+        - 以 '-' 开头（如 --config）、或已是绝对路径 → 原样保留；
+        - 其余若 <仓库根>/<arg> 存在（如配置文件、launcher.py）→ 转为绝对路径；
+        - 其余（如 stdio）原样保留。
+
+    诊断、握手探活、Host 配置导出三处共用本函数，不得各自重复实现。
+#>
+function Resolve-McpStartCommand {
+    [CmdletBinding()]
+    param([AllowNull()]$Command)
+
+    if (-not $Command) { return $null }
+    $root = $script:McpCtlGlobal.RepoRoot
+    $parts = @($Command)
+    $resolved = @()
+    for ($i = 0; $i -lt $parts.Count; $i++) {
+        $part = "$($parts[$i])".Trim()
+        if (-not $part) { continue }
+        if ([IO.Path]::IsPathRooted($part) -or ($i -gt 0 -and $part.StartsWith('-'))) {
+            $resolved += $part
+            continue
+        }
+        $repoPath = Join-Path $root $part
+        if (Test-Path -LiteralPath $repoPath) {
+            $resolved += (Resolve-Path -LiteralPath $repoPath).ProviderPath
+        }
+        elseif ($i -eq 0 -and (Get-Command $part -ErrorAction SilentlyContinue)) {
+            $resolved += $part   # PATH 命令（如 node）保留原名
+        }
+        else {
+            $resolved += $part
+        }
+    }
+    return $resolved
+}
+
+<#
+.SYNOPSIS
     获取全部服务注册表条目。
 
 .DESCRIPTION
     将注册表哈希表转换为 PSCustomObject 列表返回；每条目额外附加
     *Full 后缀的绝对路径字段（基于仓库根解析），供后续脚本直接使用。
+    StartCommand 输出前经 Resolve-McpStartCommand 归一化（仓库内相对路径
+    转绝对路径，PATH 命令保留原名）。
 
 .OUTPUTS
     System.Management.Automation.PSCustomObject[]
@@ -54,7 +103,7 @@ function Get-McpServices {
             Code                  = $svc.Code
             Id                    = $svc.Id
             DisplayName           = $svc.DisplayName
-            StartCommand          = $svc.StartCommand
+            StartCommand          = (Resolve-McpStartCommand -Command $svc.StartCommand)
             Stack                 = $svc.Stack
             BinaryPath            = $svc['BinaryPath']
             ConfigTemplate        = $svc.ConfigTemplate

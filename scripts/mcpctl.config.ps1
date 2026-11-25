@@ -15,14 +15,17 @@
       Code           服务代号（受控服务清单中的 A/B/C/D，唯一）
       Id             子目录名（唯一，与仓库目录一致）
       DisplayName    显示名（全中文菜单展示）
-      StartCommand   启动命令（占位，待 M5–M8 按各服务实现回填；$null = 未接入）
+      StartCommand   实际拉起命令（数组；以仓库相对路径书写，运行时由 registry.ps1 的
+                     Resolve-McpStartCommand 归一化为绝对路径后使用）
       ConfigTemplate 配置模板路径（仓库相对路径，随仓库分发）
       LocalConfig    本地配置路径（仓库相对路径；真实凭证所在，已被 .gitignore 排除）
       PidFile        PID 文件路径（仓库相对路径，运行时生成）
       LogFile        日志文件路径（仓库相对路径，运行时生成）
       Stack          技术栈标识（python / node / binary，供 Bootstrap M4 与向导使用）
       BinaryPath     可选：binary 技术栈的可执行文件路径（仓库相对路径）；缺省时按 <服务Id>.exe 探测
-      BinaryPath     可选：binary 技术栈的可执行文件路径（仓库相对路径）；缺省时按 <服务Id>.exe 探测
+      语义说明：Stack 表示【依赖获取方式】（Bootstrap 依据，如 mcp-github 的 binary 表示二进制由
+      setup-github-mcp.ps1 下载落位）；StartCommand 表示【实际拉起方式】（Host / 探活使用，如
+      mcp-github 实际由 node 启动 launcher.mjs）。二者允许不同。
 #>
 
 # ---------------------------------------------------------------------------
@@ -53,7 +56,7 @@ $script:McpCtlGlobal = @{
 
 # ---------------------------------------------------------------------------
 # 服务注册表
-# 说明：启动命令当前为占位（$null），M5–M8 各服务接入时回填真实命令。
+# 说明：StartCommand 为仓库相对路径，运行时归一化为绝对路径（见 scripts/lib/registry.ps1）。
 # ---------------------------------------------------------------------------
 
 $script:McpServices = @(
@@ -61,7 +64,7 @@ $script:McpServices = @(
         Code           = 'A'
         Id             = 'mcp-gerrit'
         DisplayName    = 'Gerrit 代码评审'
-        StartCommand   = $null   # 占位：待 M5 回填（gerrit-mcp-server，Python stdio）
+        StartCommand   = @('mcp-gerrit/venv/Scripts/gerrit-mcp-server.exe', '--config', 'mcp-gerrit/gerrit_config.json', 'stdio')
         ConfigTemplate = 'mcp-gerrit/gerrit_config.sample.json'
         LocalConfig    = 'mcp-gerrit/gerrit_config.json'
         PidFile        = 'mcp-gerrit/run.pid'
@@ -72,7 +75,7 @@ $script:McpServices = @(
         Code           = 'B'
         Id             = 'mcp-github'
         DisplayName    = 'GitHub / GitHub Enterprise'
-        StartCommand   = $null   # 占位：待 M6 回填（官方 github-mcp-server 本地部署，stdio）
+        StartCommand   = @('node', 'mcp-github/launcher.mjs')
         ConfigTemplate = 'mcp-github/.env.template'
         LocalConfig    = 'mcp-github/.env'
         PidFile        = 'mcp-github/run.pid'
@@ -84,7 +87,7 @@ $script:McpServices = @(
         Code           = 'C'
         Id             = 'mcp-jenkins'
         DisplayName    = 'Jenkins CI（零插件）'
-        StartCommand   = $null   # 占位：待 M7 回填（社区 jenkins-mcp，Node stdio，仅 REST API）
+        StartCommand   = @('node', 'mcp-jenkins/launcher.mjs')
         ConfigTemplate = 'mcp-jenkins/jenkins_config.sample.json'
         LocalConfig    = 'mcp-jenkins/jenkins_config.json'
         PidFile        = 'mcp-jenkins/run.pid'
@@ -95,7 +98,7 @@ $script:McpServices = @(
         Code           = 'D'
         Id             = 'mcp-atlassian'
         DisplayName    = 'Atlassian Jira + Confluence'
-        StartCommand   = $null   # 占位：待 M8 回填（社区一体化 mcp-atlassian，Python）
+        StartCommand   = @('mcp-atlassian/venv/Scripts/python.exe', 'mcp-atlassian/launcher.py')
         ConfigTemplate = 'mcp-atlassian/atlassian_config.sample.json'
         LocalConfig    = 'mcp-atlassian/atlassian_config.json'
         PidFile        = 'mcp-atlassian/run.pid'

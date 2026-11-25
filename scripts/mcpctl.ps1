@@ -54,14 +54,15 @@ function Invoke-McpHostConfigExport {
     foreach ($svc in (Get-McpServices)) {
         $ready = (Get-McpConfigReadiness -Code $svc.Code | Select-Object -First 1)
         $entry = [ordered]@{}
-        if (Test-McpStartCommandFilled -Service $svc) {
+        if ((Test-McpStartCommandFilled -Service $svc) -and (Test-McpCommandAvailable -Service $svc)) {
+            # StartCommand 已在 Get-McpServices 出口归一化（仓库内相对路径→绝对路径，PATH 命令保留原名）
             $entry['command'] = "$($svc.StartCommand[0])"
             $argsArr = @()
             if ($svc.StartCommand.Count -gt 1) { $argsArr = @($svc.StartCommand[1..($svc.StartCommand.Count - 1)]) }
             $entry['args'] = $argsArr
         }
         else {
-            $entry['command'] = "<待 M5–M8 接入里程碑回填>"
+            $entry['command'] = "<未回填>"
             $entry['args'] = @()
         }
         # env 不导出（凭证只保存在本地配置文件，绝不写明文到导出文件）
@@ -74,6 +75,12 @@ function Invoke-McpHostConfigExport {
         '_说明' = 'Host（Cursor / Claude Desktop 等）stdio 拉起配置片段；服务由 Host 按需启动，mcpctl 不托管进程。'
         'mcpServers' = $servers
     }
+    # 未就绪/未回填服务的中文告警汇总
+    $notReady = @(Get-McpServiceDiagnostics | Where-Object { -not ($_.CommandFilled -and $_.CommandExists) })
+    if ($notReady.Count -gt 0) {
+        Write-Host ("告警：以下服务启动命令不可定位或未配置：{0}" -f (($notReady | ForEach-Object { $_.Id }) -join '、'))
+        Write-Host "下一步：检查 scripts/mcpctl.config.ps1 的 StartCommand；Python/Node 服务先运行 Bootstrap；GitHub 服务先运行 mcp-github/setup-github-mcp.ps1。"
+    }
     $json = $doc | ConvertTo-Json -Depth 10
     $targetDir = Split-Path -Parent $target
     if ($targetDir -and -not (Test-Path -LiteralPath $targetDir)) {
@@ -82,6 +89,7 @@ function Invoke-McpHostConfigExport {
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [IO.File]::WriteAllText($target, $json, $utf8NoBom)
     Write-Host ("已导出 Host 配置片段：{0}（仓库外文件，不含明文凭证）" -f $target)
+    Write-Host "注意：command/args 已转换为本机绝对路径；迁移到其他机器后需重新运行本导出。"
     Write-McpOpsLog -Action '导出Host配置' -Service '-' -Detail $target
 }
 
