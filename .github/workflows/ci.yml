@@ -45,7 +45,7 @@ jobs:
         run: |
           if command -v pwsh >/dev/null 2>&1; then
             for f in $(find scripts -name '*.ps1'); do
-              pwsh -NoProfile -Command "\$null = [System.Management.Automation.Language.Parser]::ParseFile('$f', [ref]\$null, [ref]\$errs); if (\$errs.Count) { \$errs | ForEach-Object { Write-Host \$_.Message }; exit 1 }"
+              pwsh -NoProfile -Command "\$tok = \$null; \$errs = \$null; \$null = [System.Management.Automation.Language.Parser]::ParseFile('$f', [ref]\$tok, [ref]\$errs); if (\$errs.Count) { \$errs | ForEach-Object { Write-Host \$_.Message }; exit 1 }"
             done
           else
             echo "::notice::当前 Runner 无 pwsh，跳过 PowerShell 语法解析"
