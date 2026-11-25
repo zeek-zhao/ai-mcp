@@ -332,7 +332,8 @@ function Show-McpServiceDiagnostics {
 
 .DESCRIPTION
     以短时进程按注册表 StartCommand 拉起服务，发送 JSON-RPC initialize 请求，
-    等待响应（默认 8 秒超时）；无论结果如何都强制结束进程树（taskkill /F /T），
+    等待响应（默认 8 秒超时）。握手成功后先关闭标准输入让服务自行退出（启动器可借机
+    清理运行期临时文件），超时未退出再强制结束进程树（taskkill /F /T）。
     不写 PID 文件、不重定向日志。探活失败只影响本服务，不影响其他服务。
 
 .PARAMETER TimeoutSeconds
@@ -375,32 +376,67 @@ function Invoke-McpHandshakeProbe {
     $psi.RedirectStandardInput = $true
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
+    # 服务端（含各启动器）统一按 UTF-8 输出
+    $psi.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $psi.StandardErrorEncoding = New-Object System.Text.UTF8Encoding($false)
 
+    # 不使用 DataReceivedEventHandler 事件回调：回调在线程池线程上执行，该线程没有可用的运行空间，
+    # PowerShell 会在收到输出的瞬间崩溃（5.1 与 7 均如此）。改为异步读取 + 轮询，两个引擎行为一致。
     $sbOut = New-Object System.Text.StringBuilder
     $sbErr = New-Object System.Text.StringBuilder
-    $onOut = [System.Diagnostics.DataReceivedEventHandler]{ param($s, $e) if ($null -ne $e.Data) { [void]$sbOut.AppendLine($e.Data) } }
-    $onErr = [System.Diagnostics.DataReceivedEventHandler]{ param($s, $e) if ($null -ne $e.Data) { [void]$sbErr.AppendLine($e.Data) } }
+    $outTask = $null
+    $errTask = $null
+    # 逐行取回已到达的输出（读到一行就立刻开始读下一行，避免管道缓冲区写满）
+    $drainOut = {
+        while ($outTask -and $outTask.IsCompleted) {
+            $line = $outTask.Result
+            if ($null -eq $line) { $outTask = $null; break }
+            [void]$sbOut.AppendLine($line)
+            $outTask = $proc.StandardOutput.ReadLineAsync()
+        }
+    }
+    $drainErr = {
+        while ($errTask -and $errTask.IsCompleted) {
+            $line = $errTask.Result
+            if ($null -eq $line) { $errTask = $null; break }
+            [void]$sbErr.AppendLine($line)
+            $errTask = $proc.StandardError.ReadLineAsync()
+        }
+    }
 
     $proc = $null
+    $responded = $false
     try {
         $proc = [System.Diagnostics.Process]::Start($psi)
-        $proc.add_OutputDataReceived($onOut)
-        $proc.add_ErrorDataReceived($onErr)
-        $proc.BeginOutputReadLine()
-        $proc.BeginErrorReadLine()
+        $outTask = $proc.StandardOutput.ReadLineAsync()
+        $errTask = $proc.StandardError.ReadLineAsync()
         $proc.StandardInput.WriteLine($initJson)
         $proc.StandardInput.Flush()
 
         $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-        $responded = $false
         while ((Get-Date) -lt $deadline) {
+            . $drainOut
+            . $drainErr
             if ($sbOut.ToString() -match '"jsonrpc"') { $responded = $true; break }
-            if ($proc.HasExited) { break }
+            if ($proc.HasExited) {
+                # 进程已退出：稍等残余输出到达后再取回一次
+                Start-Sleep -Milliseconds 200
+                . $drainOut
+                . $drainErr
+                break
+            }
             Start-Sleep -Milliseconds 150
         }
 
+        if ($responded) {
+            # 握手成功后先优雅收尾：关闭标准输入（MCP stdio 服务在输入流结束后自行退出，
+            # 启动器可借机清理运行期临时文件）；超时未退出再由 finally 强制结束进程树
+            try { $proc.StandardInput.Close() } catch { }
+            $proc.WaitForExit(3000) | Out-Null
+        }
+
         $stderrTail = ''
-        if (-not $responded) { $stderrTail = ($sbErr.ToString() -split "`n" | Select-Object -Last 3) -join ' ' }
+        if (-not $responded) { $stderrTail = (@($sbErr.ToString() -split "`r?`n" | Where-Object { $_.Trim() }) | Select-Object -Last 3) -join ' ' }
         $exitNote = if ($proc.HasExited) { ("进程已退出（code {0}）" -f $proc.ExitCode) } else { '进程仍在运行' }
     }
     catch {
@@ -415,11 +451,7 @@ function Invoke-McpHandshakeProbe {
             Start-Process -FilePath 'taskkill.exe' -ArgumentList "/PID $($proc.Id) /T /F" -WindowStyle Hidden -ErrorAction SilentlyContinue | Out-Null
             $proc.WaitForExit(3000) | Out-Null
         }
-        if ($proc) {
-            try { $proc.remove_OutputDataReceived($onOut) } catch { }
-            try { $proc.remove_ErrorDataReceived($onErr) } catch { }
-            $proc.Dispose()
-        }
+        if ($proc) { $proc.Dispose() }
     }
 
     if ($responded) {

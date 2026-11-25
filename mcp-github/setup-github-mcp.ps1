@@ -61,7 +61,7 @@ try {
 
     $verRes = & $exePath --version 2>&1
     Write-Host ("[setup] 安装完成：{0}（版本输出：{1}）" -f $exePath, ($verRes -join ' ').Trim())
-    Write-Host '[setup] 下一步：复制 .env.template 为 .env 并填写 GITHUB_PAT（不入库）'
+    Write-Host '[setup] 下一步：运行 scripts/mcpctl.ps1（菜单 4 配置向导），在 mcp.config.json 的 services.github 段填写地址与个人访问令牌（不入库）'
     exit 0
 }
 catch {

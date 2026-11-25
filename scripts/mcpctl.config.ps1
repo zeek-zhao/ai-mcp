@@ -75,8 +75,7 @@ $script:McpServices = @(
         Code           = 'A'
         Id             = 'mcp-gerrit'
         DisplayName    = 'Gerrit 代码评审'
-        # 过渡写法：gerrit 启动器改读统一配置由 T-CFG-05 承接（届时改为 mcp-gerrit/launcher.py）
-        StartCommand   = @('mcp-gerrit/venv/Scripts/gerrit-mcp-server.exe', '--config', 'mcp-gerrit/gerrit_config.json', 'stdio')
+        StartCommand   = @('mcp-gerrit/venv/Scripts/python.exe', 'mcp-gerrit/launcher.py')
         ConfigKey      = 'gerrit'
         PidFile        = 'mcp-gerrit/run.pid'
         LogFile        = 'mcp-gerrit/logs/service.log'

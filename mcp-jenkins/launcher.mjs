@@ -1,65 +1,107 @@
 /**
  * mcp-jenkins 本地启动器（模型一：由 Host 按需 stdio 拉起，本进程生命周期完全由 Host 管理）。
  *
- * 职责：
- *   1. 读取同目录 jenkins_config.json（本地真实配置，已被 .gitignore 排除，绝不入库）；
- *   2. 将其映射为 jenkins-mcp-server 需要的环境变量：
- *        baseUrl  -> JENKINS_URL
- *        username -> JENKINS_USERNAME
- *        apiToken -> JENKINS_API_TOKEN（留空则上游以匿名只读方式访问）
- *   3. 动态 import 上游服务入口并启动（绕过其 validateConfig 的环境变量强校验）。
+ * 配置来源：仓库根统一配置 mcp.config.json 的 services.jenkins 配置段。
+ *   路径优先取环境变量 MCP_SUITE_CONFIG（绝对路径），未设置时回退到 <本服务目录>/../mcp.config.json。
+ * 字段映射：
+ *   baseUrl  -> JENKINS_URL
+ *   username -> JENKINS_USERNAME
+ *   apiToken -> JENKINS_API_TOKEN
+ *   readOnly -> 仅提示：上游 jenkins-mcp-server 没有内建只读模式，写操作不会被拦截
  *
+ * 上游服务入口通过动态 import 加载，以绕过其 validateConfig 的环境变量强校验。
  * 注意：上游 import 必须是动态的。ES module 的静态 import 会被提升并在任何
  * 顶层语句之前求值，若静态 import，环境变量会在配置注入前被读取。
  *
- * 本脚本不修改上游源码，npm ci / 升级保持安全。
- * 占位符（<...> 形态）视为未填写，直接拒绝启动（与配置向导的就绪判定一致）。
+ * 约束：本脚本不修改上游源码，npm ci / 升级保持安全；stdout 只留给 MCP 协议，诊断信息一律写 stderr；
+ * 任何输出不得包含凭证明文；占位符（<...> 形态）或空值视为未填写，拒绝启动（与 mcpctl 配置向导的就绪判定一致）。
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync, existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const configPath = process.env.MCP_JENKINS_CONFIG_FILE || join(here, "jenkins_config.json");
+const TAG = "[jenkins-launcher]";
+const KEY = "jenkins";
+// 字段的中文名，与 scripts/lib/config-wizard.ps1 的字段目录保持一致
+const LABELS = { enabled: "是否启用 Jenkins", baseUrl: "Jenkins 地址", username: "Jenkins 用户名", apiToken: "API Token" };
 
-if (!existsSync(configPath)) {
-  console.error(`[jenkins-launcher] 本地配置缺失：${configPath}`);
-  console.error("[jenkins-launcher] 下一步：复制 jenkins_config.sample.json 为 jenkins_config.json 并填写后重试（该文件已被 .gitignore 排除，不会入库）");
+function fail(message) {
+  console.error(`${TAG} ${message}`);
   process.exit(1);
 }
 
 const isPlaceholder = (v) => /^\s*<.*>\s*$/.test(v);
-let cfg;
-try {
-  cfg = JSON.parse(readFileSync(configPath, "utf8"));
-} catch (err) {
-  console.error(`[jenkins-launcher] 配置解析失败：${err.message}`);
-  process.exit(1);
+const text = (v) => (v === undefined || v === null ? "" : String(v)).trim();
+
+// 读取统一配置并返回 services.jenkins 配置段；任何问题都以中文说明退出
+function loadSection() {
+  const override = text(process.env.MCP_SUITE_CONFIG);
+  // MCP_SUITE_CONFIG 约定为绝对路径；这里按绝对路径语义解析，避免受工作目录影响
+  const configPath = override ? resolve(override) : join(here, "..", "mcp.config.json");
+  if (!existsSync(configPath)) {
+    fail(`统一配置文件不存在：${configPath}\n下一步：运行 mcpctl 配置向导（scripts/mcpctl.ps1 菜单 4）从模板生成 mcp.config.json 并填写。`);
+  }
+  let doc;
+  try {
+    doc = JSON.parse(readFileSync(configPath, "utf8"));
+  } catch (err) {
+    // 不回显解析器的原始信息（可能夹带配置内容），只给出出错位置
+    const raw = String((err && err.message) || "");
+    const lc = /line (\d+) column (\d+)/.exec(raw);
+    const pos = /position (\d+)/.exec(raw);
+    const where = lc ? `（第 ${lc[1]} 行，第 ${lc[2]} 列附近）` : pos ? `（第 ${pos[1]} 个字符附近）` : "";
+    fail(`统一配置不是合法 JSON：${configPath}${where}。请检查引号、逗号与括号是否成对。`);
+  }
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
+    fail(`统一配置的顶层必须是 JSON 对象：${configPath}`);
+  }
+  if (doc.configVersion !== 1) {
+    fail(`统一配置的 configVersion 不受支持：${configPath}（当前仅支持 1）`);
+  }
+  const services = doc.services;
+  if (!services || typeof services !== "object" || Array.isArray(services)) {
+    fail(`统一配置缺少 services 配置段，或该段不是对象：${configPath}（请对照 mcp.config.sample.json 补全）`);
+  }
+  const section = services[KEY];
+  if (!section || typeof section !== "object" || Array.isArray(section)) {
+    fail(`统一配置缺少 services.${KEY} 配置段：${configPath}（请对照 mcp.config.sample.json 补全）`);
+  }
+  return { section, configPath };
 }
 
-const baseUrl = String(cfg.baseUrl || "").trim();
-const username = String(cfg.username || "").trim();
-const apiToken = String(cfg.apiToken || "").trim();
+const { section } = loadSection();
+if (section.enabled !== true) {
+  fail(`Jenkins 已在统一配置中禁用（services.${KEY}.enabled 不是 true），不启动。`);
+}
+const baseUrl = text(section.baseUrl).replace(/\/+$/, "");
+const username = text(section.username);
+const apiToken = text(section.apiToken);
 
 if (!baseUrl || isPlaceholder(baseUrl)) {
-  console.error("[jenkins-launcher] jenkins_config.json 中 baseUrl 为空或仍是占位符，请填写真实实例地址后重试");
-  process.exit(1);
+  fail(`统一配置 services.${KEY}.baseUrl（${LABELS.baseUrl}）未填写或仍是占位符，请填写后重试。`);
 }
-if (apiToken && isPlaceholder(apiToken)) {
-  console.error("[jenkins-launcher] jenkins_config.json 中 apiToken 仍是占位符，请填写真实 API Token（或删除该字段以匿名只读访问）");
-  process.exit(1);
+if (!/^https?:\/\//i.test(baseUrl)) {
+  fail(`统一配置 services.${KEY}.baseUrl（${LABELS.baseUrl}）格式不正确：需以 http:// 或 https:// 开头。`);
 }
-
-if (baseUrl) process.env.JENKINS_URL = baseUrl;
-if (username) process.env.JENKINS_USERNAME = username;
-if (apiToken) process.env.JENKINS_API_TOKEN = apiToken;
+if (!username || isPlaceholder(username)) {
+  fail(`统一配置 services.${KEY}.username（${LABELS.username}）未填写或仍是占位符，请填写后重试。`);
+}
+if (!apiToken || isPlaceholder(apiToken)) {
+  fail(`统一配置 services.${KEY}.apiToken（${LABELS.apiToken}）未填写或仍是占位符，请填写后重试。`);
+}
 
 const entry = join(here, "node_modules", "jenkins-mcp-server", "src", "server", "mcp-server.js");
 if (!existsSync(entry)) {
-  console.error(`[jenkins-launcher] 上游服务缺失：${entry}`);
-  console.error("[jenkins-launcher] 下一步：运行 scripts/bootstrap.ps1（或在本目录执行 npm ci）安装锁定依赖后重试");
-  process.exit(1);
+  fail(`上游服务缺失：${entry}\n下一步：运行 scripts/bootstrap.ps1（或在本目录执行 npm ci）安装锁定依赖后重试。`);
+}
+
+process.env.JENKINS_URL = baseUrl;
+process.env.JENKINS_USERNAME = username;
+process.env.JENKINS_API_TOKEN = apiToken;
+if (section.readOnly === true) {
+  console.error(`${TAG} 提示：readOnly=true。上游 jenkins-mcp-server 无内建只读模式，触发 / 停止构建等写操作不会被拦截。`);
 }
 
 const { JenkinsMcpServer } = await import(pathToFileURL(entry).href);
