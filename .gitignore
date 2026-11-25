@@ -7,6 +7,7 @@
 *_config.json
 *_config.local.*
 !*_config.sample.json
+# 以上旧名规则保留：分服务配置模板已下线（配置统一见下方），历史上各服务目录下的真实配置文件含凭证，仍须排除以防误提交
 # 统一配置：真实配置含凭证，永不入库；模板与 Schema 随仓库分发
 /mcp.config.json
 

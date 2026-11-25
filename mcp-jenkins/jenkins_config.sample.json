@@ -1,7 +1,0 @@
-{
-  "baseUrl": "<https://jenkins.example.com>",
-  "username": "<your-username>",
-  "apiToken": "<your-api-token>",
-  "readOnly": true,
-  "instances": []
-}

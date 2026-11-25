@@ -52,12 +52,15 @@
 ai-mcp/
 ├─ README.md
 ├─ .gitignore
+├─ mcp.config.sample.json    # 统一配置模板（四服务共用；字段说明见 docs/services/配置字段说明.md）
+├─ mcp.config.schema.json    # 统一配置结构契约（CI 据此校验模板）
+├─ mcp.config.json           # 本地真实配置（含凭证，不入库；由配置向导生成）
 ├─ .github/                 # Issue/PR 模板、CI、CODEOWNERS
 ├─ docs/                    # 工程文档（人读）
 ├─ ai/                      # AI 指令文档（AI 读）
 ├─ scripts/                 # 总控脚本（PowerShell）
 │  └─ lib/
-├─ mcp-gerrit/
+├─ mcp-gerrit/              # 服务目录：启动器（读取统一配置）+ 依赖清单与锁定文件
 ├─ mcp-github/
 ├─ mcp-jenkins/
 └─ mcp-atlassian/
@@ -70,6 +73,6 @@ ai-mcp/
 
 ## 五、安全提示
 
-- 真实 Token、密码、私钥、内部地址**一律不入库**；仓库只保留 `*.sample` / `*.template` 模板。
-- 任何凭证只写入本地被 `.gitignore` 排除的配置文件。
+- 真实 Token、密码、私钥、内部地址**一律不入库**；仓库只保留统一配置模板 `mcp.config.sample.json` 与结构契约 `mcp.config.schema.json`。
+- 凭证只写入本地的统一配置 `mcp.config.json`（已被 `.gitignore` 排除），不写入服务目录、日志或 Host 配置文件。
 - 若凭证曾在聊天、截图、提交记录中暴露，应立即在对应系统重置，并登记到 `docs/operations/问题记录.md`。

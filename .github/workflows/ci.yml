@@ -35,21 +35,16 @@ jobs:
           fi
           echo "统一配置入库检查通过：mcp.config.json 未被跟踪"
 
-      - name: 模板完整性检查
+      - name: 旧分服务配置入库检查
         run: |
           set -e
-          # 过渡：以下 4 行为分服务配置模板的存在性检查，T-DOC-02 下线模板时删除（保留下方真实本地配置不得被跟踪的检查）
-          # 各服务模板必须存在；缺失即为错误（DEV-007 整改：warning 升级为 error 并失败）
-          test -f mcp-gerrit/gerrit_config.sample.json || { echo "::error::mcp-gerrit 模板缺失（期望 mcp-gerrit/gerrit_config.sample.json）"; exit 1; }
-          test -f mcp-github/.env.template || { echo "::error::mcp-github 模板缺失（期望 mcp-github/.env.template）"; exit 1; }
-          test -f mcp-jenkins/jenkins_config.sample.json || { echo "::error::mcp-jenkins 模板缺失（期望 mcp-jenkins/jenkins_config.sample.json）"; exit 1; }
-          test -f mcp-atlassian/atlassian_config.sample.json || { echo "::error::mcp-atlassian 模板缺失（期望 mcp-atlassian/atlassian_config.sample.json）"; exit 1; }
-
-          # 真实本地配置不得被 Git 跟踪
+          # 分服务配置模板已下线（T-DOC-02），配置统一为仓库根 mcp.config.json；
+          # 历史上各服务目录下的真实配置文件含凭证，仍不得被 Git 跟踪
           if git ls-files | grep -E '(^|/)(gerrit_config\.json|jenkins_config\.json|atlassian_config\.json|\.env)$'; then
-            echo "::error::检测到真实本地配置被跟踪，请移出版本库并加入 .gitignore"
+            echo "::error::检测到旧的真实本地配置被跟踪，请移出版本库（该文件含凭证，应被 .gitignore 排除）"
             exit 1
           fi
+          echo "旧分服务配置入库检查通过：没有真实本地配置被跟踪"
 
       - name: 注册表 StartCommand 防回归检查
         run: |
@@ -216,29 +211,18 @@ jobs:
           print(f"统一配置校验通过：{len(field_paths)} 个字段均有中文提示；Schema 必填集合与契约一致；sample 通过 Schema 校验")
           PY
 
-      - name: JSON 配置模板可解析校验
+      - name: 旧配置引用检查
         run: |
           set -e
-          # 过渡：以下为分服务配置模板的可解析校验，T-DOC-02 下线模板时删除本步骤（统一配置的校验见上一步骤）
-          # .env.template 非 JSON，跳过；其余 *_config.sample.json 必须能被 json.load 解析
-          for f in mcp-gerrit/gerrit_config.sample.json mcp-jenkins/jenkins_config.sample.json mcp-atlassian/atlassian_config.sample.json; do
-            python3 -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8-sig'))" "$f" \
-              || { echo "::error::JSON 模板解析失败: $f"; exit 1; }
-          done
-
-      - name: 旧配置引用检查（过渡）
-        # TODO(T-DOC-02)：分服务配置模板下线后移除 continue-on-error，本检查改为强制
-        continue-on-error: true
-        run: |
-          # 统一配置改造后，仓库不应再引用分服务配置文件（统一改为仓库根 mcp.config.json）
+          # 分服务配置模板已下线（T-DOC-02）：仓库不得再引用旧配置文件名（含旧 sample 模板名），配置统一为仓库根 mcp.config.json
           # 豁免：历史记录（更新记录、问题记录）只追加不改写；.gitignore 保留旧文件名的忽略规则；本步骤自身的检索模式
-          hits=$(git -c core.quotepath=off grep -n -E 'gerrit_config\.json|jenkins_config\.json|atlassian_config\.json|\.env\.template' -- . ':!docs/operations/更新记录.md' ':!docs/operations/问题记录.md' ':!.gitignore' ':!.github/workflows/ci.yml' || true)
+          hits=$(git -c core.quotepath=off grep -n -E '(gerrit|jenkins|atlassian)_config|\.env\.template' -- . ':!docs/operations/更新记录.md' ':!docs/operations/问题记录.md' ':!.gitignore' ':!.github/workflows/ci.yml' || true)
           if [ -n "$hits" ]; then
-            echo "::warning::仍存在对分服务配置文件的引用，待 T-DOC-02 清理后本检查转为强制："
+            echo "::error::检测到对已下线分服务配置文件的引用（配置已统一为仓库根 mcp.config.json）："
             printf '%s\n' "$hits"
             exit 1
           fi
-          echo "无分服务配置文件引用"
+          echo "旧配置引用检查通过：无分服务配置文件引用"
 
       - name: 禁止跟踪依赖目录与运行时产物
         run: |
