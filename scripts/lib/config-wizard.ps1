@@ -7,6 +7,8 @@
     统一配置改造（T-CFG-04）后的配置入口，只读写一个文件：仓库根的 mcp.config.json。
       - 首次进入：统一配置文件不存在时提示“将从 sample 生成”，调用 Initialize-McpSuiteConfigFromSample；
         文件无法解析时不覆盖，提示手工修复。
+      - 旧版文件清理：本地文件若带旧版遗留的 _hints 段，进入向导时调用 Remove-McpSuiteLegacyHints
+        原地清除（其余配置内容不变）；字段提示一律取自模板。
       - 逐字段录入：每个字段先打印中文说明（_hints）、参考值（模板）与当前状态，再读入新值；
         每录入一个字段即原子写回（Set-McpSuiteConfigSection），中途中断文件仍可解析；
         敏感字段只显示“已设置 / 未设置”，不回显值。
@@ -825,6 +827,17 @@ function Invoke-McpConfigWizard {
         Write-Host ('统一配置文件无法读取：' + $_.Exception.Message)
         Write-Host '配置向导不会覆盖无法解析的文件：请先手动修复该文件，或把它移走后重新运行向导。'
         return
+    }
+
+    # 旧版文件可能带 _hints 段：mcp.config.json 不再保留它，进入向导时顺手清掉。
+    # 只去掉这一段，其余配置内容不变；失败也不影响录入（下次保存配置时仍会移除）。
+    try {
+        if (Remove-McpSuiteLegacyHints) {
+            Write-Host '已移除统一配置中旧版遗留的 _hints 段：字段提示统一取自模板 mcp.config.sample.json 与配置字段说明文档，配置内容未变。'
+        }
+    }
+    catch {
+        Write-Host ('提示：统一配置仍带旧版遗留的 _hints 段，本次未能自动移除（' + $_.Exception.Message + '）。不影响录入，下次保存配置时会自动移除。')
     }
 
     # 字段目录自检：与模板不一致时直接报错，避免录入界面与文件脱节
