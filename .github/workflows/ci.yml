@@ -438,6 +438,14 @@ jobs:
             exit 1
           fi
 
+      # 自检脚本结构模式（T-TEST-01）：不需要凭证与依赖。用模板当统一配置，四个启动器必须按预期拒绝
+      # （模板参考值 / 占位符）并记为 SKIP，整体退出码为 0；用例、注册表、模板、网关样例不一致则退出码为 1。
+      - name: 自检脚本结构模式（Node 直跑）
+        run: |
+          set -e
+          node --version
+          node scripts/tests/lib/mcp-stdio-test.mjs --structural
+
       - name: PowerShell 脚本语法解析（若 pwsh 可用）
         run: |
           if command -v pwsh >/dev/null 2>&1; then
@@ -520,3 +528,16 @@ jobs:
         env:
           GITLEAKS_ENABLE_COMMENTS: false
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 自检脚本结构模式在 Windows Runner 上运行（T-TEST-01 验收项）：scripts\tests\run-tests.bat --structural 须返回 0。
+  # 不需要凭证与依赖环境：venv 未安装时用 PATH 上的 python 代替，node 用 PATH 上的；四个启动器应拒绝模板配置。
+  structural-tests:
+    name: 自检脚本结构模式（Windows）
+    runs-on: windows-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: run-tests.bat --structural
+        shell: cmd
+        run: scripts\tests\run-tests.bat --structural

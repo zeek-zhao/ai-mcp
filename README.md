@@ -22,6 +22,7 @@
 | 架构与决策记录 | `docs/architecture/架构与决策记录.md` | 架构决策（ADR）与取舍理由 |
 | 服务接入说明 | `docs/services/服务接入说明.md` | 四个服务的选型、配置段、能力与已知限制 |
 | 配置字段说明 | `docs/services/配置字段说明.md` | 统一配置 `mcp.config.json` 的字段表、参考值与填写规则 |
+| 自检脚本说明 | `docs/services/自检脚本说明.md` | `scripts/tests/` 自检脚本：四态退出码与直连 / 结构 / 网关三种模式 |
 | 安全与凭证管理 | `docs/security/安全与凭证管理.md` | 凭证、权限、密钥扫描与审计要求 |
 | Host 接入配置 | `docs/host/Host接入配置.md` | Cursor / Claude Desktop 等 Host 的接入示例 |
 | 任务清单 | `docs/operations/任务清单.md` | 可执行任务条目、状态、依赖、验收标准 |
