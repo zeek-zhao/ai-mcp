@@ -14,12 +14,14 @@
       2. 写入格式固定：UTF-8 无 BOM、2 空格缩进；顶层键顺序 configVersion → _comment →
          services，services 内各段顺序与注册表一致，段内保持文件原有字段顺序。
          _hints（字段中文提示）只保留在模板 mcp.config.sample.json：从模板生成、或经向导
-         写入 mcp.config.json 时都不带入 _hints（T-FIX-F / T-FIX-J）。
+         写入 mcp.config.json 时都不带入 _hints；配置向导启动时会清除旧文件遗留的 _hints
+         （Remove-McpSuiteLegacyHints），字段提示一律以模板为准（T-FIX-F / T-FIX-J）。
       3. 原子写入：先写同目录临时文件，再替换目标文件；任何一步失败都不留下半截文件，
          原文件保持不变。
       4. 错误信息全部为中文，且【绝不包含字段值】（文件中有凭证）。
       5. _comment 与 _hints 是给人看的说明，程序逻辑必须忽略它们，缺失不影响读写；
-       读取时兼容仍带 _hints 的旧 mcp.config.json，写入时不再保留。
+       读取时兼容仍带 _hints 的旧 mcp.config.json，但本地文件不再保留 _hints
+       （写入时丢弃，配置向导启动时清除）。
 
     字段含义见 docs/services/配置字段说明.md；结构契约见 mcp.config.schema.json。
 
@@ -557,6 +559,47 @@ function Set-McpSuiteConfigSection {
     return ,$written
 }
 
+<#
+.SYNOPSIS
+    清除本地 mcp.config.json 中旧版遗留的顶层 _hints 段（T-FIX-J）。
+
+.DESCRIPTION
+    - mcp.config.json 不再保留 _hints：字段提示集中在模板 mcp.config.sample.json 与
+      docs/services/配置字段说明.md。
+    - 仅当本地文件确实带顶层 _hints 时才重写；其余键、值与顺序原样保留（排版按模块约定
+      重新整理为 2 空格缩进）。写入采用原子替换，失败时原文件不变。
+    - 文件不存在或没有 _hints 时不做任何写入。文件无法解析时抛出中文错误（不含字段值），
+      由调用方决定如何处理。
+    - 只有配置向导在启动时调用；诊断、探活、预检等只读入口不得调用本函数。
+
+.OUTPUTS
+    [bool]：是否执行了清理。
+#>
+function Remove-McpSuiteLegacyHints {
+    [CmdletBinding()]
+    param()
+
+    $path = Get-McpSuiteConfigPath
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
+    $cfg = Get-McpSuiteConfig
+    if (-not $cfg.Contains('_hints')) { return $false }
+
+    $newCfg = [ordered]@{}
+    foreach ($tk in $cfg.Keys) {
+        if ("$tk" -eq '_hints') { continue }
+        $newCfg["$tk"] = $cfg[$tk]
+    }
+    $text = (ConvertTo-McpJsonString -Value $newCfg) + "`n"
+    try {
+        $null = ConvertFrom-McpSuiteConfigText -Text $text -Path '（待写入的内容）'
+    }
+    catch {
+        throw ('去掉 _hints 后的统一配置文本未通过自检，已中止写入（原文件未改动）：{0}' -f $_.Exception.Message)
+    }
+    Write-McpSuiteConfigAtomic -Path $path -Text $text
+    return $true
+}
+
 # ---------------------------------------------------------------------------
 # 就绪判定 / 初始化 / 提示
 # ---------------------------------------------------------------------------
@@ -779,7 +822,7 @@ function Initialize-McpSuiteConfigFromSample {
 
 <#
 .SYNOPSIS
-    获取字段提示（来自统一配置的 _hints；本地文件没有时回退到模板）。
+    获取字段提示（以模板的 _hints 为准；模板缺失或没有 _hints 时，才回退本地文件旧版遗留的 _hints）。
 
 .PARAMETER Key
     配置段名（注册表 ConfigKey）；给出时只返回该段的提示，并去掉“段名.”前缀。
@@ -799,26 +842,27 @@ function Get-McpSuiteConfigHints {
         }
     }
 
+    # 字段提示以模板为准（随仓库更新）；模板缺失或没有 _hints 时，才回退本地文件的 _hints（旧版遗留）
     $hints = $null
-    $path = Get-McpSuiteConfigPath
-    if (Test-Path -LiteralPath $path -PathType Leaf) {
+    $samplePath = Get-McpSuiteConfigSamplePath
+    if (Test-Path -LiteralPath $samplePath -PathType Leaf) {
         try {
-            $cfg = Get-McpSuiteConfig
-            if ($cfg.Contains('_hints') -and $cfg['_hints'] -is [System.Collections.IDictionary]) { $hints = $cfg['_hints'] }
+            $sampleCfg = ConvertFrom-McpSuiteConfigText -Text ([IO.File]::ReadAllText($samplePath, [Text.Encoding]::UTF8)) -Path $samplePath
+            if ($sampleCfg.Contains('_hints') -and $sampleCfg['_hints'] -is [System.Collections.IDictionary]) { $hints = $sampleCfg['_hints'] }
         }
         catch {
-            # 本地文件有问题时不在这里报错（就绪判定会报），提示回退到模板
             $hints = $null
         }
     }
     if ($null -eq $hints) {
-        $samplePath = Get-McpSuiteConfigSamplePath
-        if (Test-Path -LiteralPath $samplePath -PathType Leaf) {
+        $path = Get-McpSuiteConfigPath
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
             try {
-                $sampleCfg = ConvertFrom-McpSuiteConfigText -Text ([IO.File]::ReadAllText($samplePath, [Text.Encoding]::UTF8)) -Path $samplePath
-                if ($sampleCfg.Contains('_hints') -and $sampleCfg['_hints'] -is [System.Collections.IDictionary]) { $hints = $sampleCfg['_hints'] }
+                $cfg = Get-McpSuiteConfig
+                if ($cfg.Contains('_hints') -and $cfg['_hints'] -is [System.Collections.IDictionary]) { $hints = $cfg['_hints'] }
             }
             catch {
+                # 本地文件有问题时不在这里报错（就绪判定会报）
                 $hints = $null
             }
         }
