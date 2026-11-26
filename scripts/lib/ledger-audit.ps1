@@ -8,7 +8,9 @@
       3. 磁盘上的 Markdown 均已在台账登记（.github 模板与台账自身除外）；
       4. 语义校验：状态为「生效（A）」的验收记录（DOC-OPS-ACCEPT-*）结论栏不得全空
          （结论栏 = 标题含「结论」的小节下，表头列名以「结果」或「结论」开头的表格）；
-      5. scripts 下全部 .ps1 带 UTF-8 BOM（Windows PowerShell 5.1 才能正确识别中文）。
+      5. scripts 下全部 .ps1 带 UTF-8 BOM（Windows PowerShell 5.1 才能正确识别中文）；
+      6. 问题记录（DOC-OPS-ISSUE-001）的 DEV 编号按出现顺序递增、不重复、不跳号
+         （已停用的编号以「已关闭」条目留档，不留例外清单）。
     任一项不通过时退出码为 1。本脚本只读，不修改任何文件。
     规则来源：docs\00-文档管理规范.md（第 5、6、7、8 节）。
 .PARAMETER RepoRoot
@@ -39,6 +41,11 @@ function Get-McpLedgerAuditResult {
     $results = New-Object System.Collections.Generic.List[object]
 
     function Add-Result([bool]$Ok, [string]$Message) {
+        # 说明文字为空说明格式化表达式出了问题（例如 -f 的参数类型不对），不能当作通过
+        if ([string]::IsNullOrWhiteSpace($Message)) {
+            $Ok = $false
+            $Message = '审计脚本内部错误：有检查项未生成说明文字（请检查 scripts/lib/ledger-audit.ps1 的格式化表达式）'
+        }
         $results.Add([pscustomobject]@{ Ok = $Ok; Message = $Message })
     }
 
@@ -126,6 +133,34 @@ function Get-McpLedgerAuditResult {
             else {
                 Add-Result $true ('{0} 语义：评审中（R）的验收记录不作结论要求（结论栏表格 {1} 个，已填写 {2} 格；回填完成后才可转 A）' -f $id, $tables, $filled)
             }
+        }
+
+        # 编号连续性校验（问题记录 DOC-OPS-ISSUE-001，与 docs\00 第 8.3 节一致）：
+        #   DEV 编号按出现顺序严格递增、不重复、不跳号；已停用的编号以「已关闭」条目留档，不留例外清单。
+        if ($id -eq 'DOC-OPS-ISSUE-001') {
+            $nums = @([regex]::Matches($text, '(?m)^\| DEV-(\d+) \|') | ForEach-Object { [int]$_.Groups[1].Value })
+            $dup = @($nums | Group-Object | Where-Object { $_.Count -gt 1 } | ForEach-Object { 'DEV-{0:D3}' -f [int]$_.Name })
+            $disorder = New-Object System.Collections.Generic.List[string]
+            for ($i = 1; $i -lt $nums.Count; $i++) {
+                if ($nums[$i] -le $nums[$i - 1]) { $disorder.Add(('DEV-{0:D3}' -f $nums[$i])) }
+            }
+            $gaps = New-Object System.Collections.Generic.List[string]
+            $lo = 0; $hi = 0
+            if ($nums.Count) {
+                # Measure-Object 返回 double，而 D3 只接受整数，必须先转 int
+                $lo = [int]($nums | Measure-Object -Minimum).Minimum
+                $hi = [int]($nums | Measure-Object -Maximum).Maximum
+                for ($n = $lo; $n -le $hi; $n++) { if ($nums -notcontains $n) { $gaps.Add(('DEV-{0:D3}' -f $n)) } }
+            }
+            $none = '无'
+            Add-Result ($nums.Count -ge 1) '问题记录 DEV 条目至少 1 行'
+            Add-Result ($dup.Count -eq 0) ('问题记录 DEV 编号不重复（重复：{0}）' -f $(if ($dup.Count) { $dup -join '、' } else { $none }))
+            Add-Result ($disorder.Count -eq 0) ('问题记录 DEV 编号按出现顺序递增（乱序：{0}）' -f $(if ($disorder.Count) { $disorder -join '、' } else { $none }))
+            $gapText = $none
+            if ($gaps.Count) { $gapText = ($gaps -join '、') }
+            $contOk = ($nums.Count -ge 1 -and $lo -eq 1 -and $gaps.Count -eq 0)
+            $contText = '问题记录 DEV 编号连续、不跳号（共 {0} 条，DEV-{1:D3}～DEV-{2:D3}；缺号：{3}）' -f @($nums.Count, $lo, $hi, $gapText)
+            Add-Result $contOk $contText
         }
 
         if ($script:McpLedgerRecordIds -contains $id) { continue }
