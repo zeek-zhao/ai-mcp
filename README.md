@@ -72,7 +72,7 @@ ai-mcp/
 
 ## 四、当前阶段
 
-- 阶段：**M0–M9 完成；统一配置改造（ADR-007）完成；M10 验收清单已就绪，待负责人执行**。四个服务与总控共用仓库根的 `mcp.config.json`：配置向导逐字段录入，启动器经 `MCP_SUITE_CONFIG` 读取，Host 配置导出自带 env；分服务配置模板已下线。登录预检与环境自愈见菜单 7。真实只读连通验证：Gerrit、GitHub、Jenkins、Jira 已由 AI 用负责人提供的凭证验证成功（待负责人签字确认，记录见验收记录各服务的「执行记录」）；Confluence 按负责人指示挂起。
+- 阶段：**M0–M9 完成；统一配置改造（ADR-007）完成；M10 验收清单已就绪，待负责人执行**。四个服务与总控共用仓库根的 `mcp.config.json`：配置向导逐字段录入，启动器经 `MCP_SUITE_CONFIG` 读取，Host 配置导出自带 env；分服务配置模板已下线。登录预检与环境自愈见菜单 7。真实只读连通验证：Gerrit、GitHub、Jenkins、Jira、Confluence 均已由 AI 用负责人提供的凭证验证成功（待负责人签字确认，记录见验收记录各服务的「执行记录」）；Jira 与 Confluence 令牌不同时，在统一配置填写可选字段 `confluencePersonalAccessToken`。
 - 下一阶段：人工验收与回填——先按 `docs/operations/验收记录-M5至M8.md` 完成四服务 Host 握手与连通验收（TASK-M5-02 ~ TASK-M8-02），再按 `docs/operations/验收记录-M10.md` 完成 Host 端到端验收（TASK-M10-01）并回填结论。DEV-001 的处置决定已留痕（暂缓重置，状态保持开放）。
 - 快速上手：复制 `mcp.config.sample.json` 为 `mcp.config.json` 后运行 `scripts/mcpctl.ps1`（菜单 4 配置向导逐字段录入 → 菜单 5 Bootstrap 初始化依赖 → 菜单 7 登录预检确认无未通过项 → 菜单 6 导出 Host 配置）；字段含义见 `docs/services/配置字段说明.md`。复制后必须替换全部 example / zhangsan 类参考值（或直接用菜单 4 配置向导逐字段录入），否则服务不会被判定就绪。
 
