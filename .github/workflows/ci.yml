@@ -64,6 +64,191 @@ jobs:
             exit 1
           fi
 
+      # 新增服务一致性检查（T-FLOW-01）：注册表每条服务都必须同步到工作流（docs/planning/新增MCP服务工作流.md）的各处。
+      # 哪一处没同步，就指明服务、配置段、第几步、缺哪个文件的什么内容；模板 / Schema / 网关 / 用例里多出未注册的服务也报错。
+      # 只读取文件文本做比对，不依赖 pwsh 与 node。
+      - name: 新增服务一致性检查
+        run: |
+          set -e
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          errors = []
+
+
+          def fail(message):
+              errors.append(message)
+
+
+          def read(name):
+              path = Path(name)
+              return path.read_text(encoding="utf-8-sig") if path.is_file() else None
+
+
+          def load_json(name):
+              text = read(name)
+              if text is None:
+                  return None
+              try:
+                  return json.loads(text)
+              except ValueError:
+                  return None
+
+
+          REGISTRY = "scripts/mcpctl.config.ps1"
+          SAMPLE = "mcp.config.sample.json"
+          SCHEMA = "mcp.config.schema.json"
+          FIELD_DOC = "docs/services/配置字段说明.md"
+          WIZARD = "scripts/lib/config-wizard.ps1"
+          GATEWAY_SOURCE = "scripts/lib/gateway-routes.ps1"
+          GATEWAY_SAMPLE = "gateway.routes.sample.json"
+          CASES = "scripts/tests/cases/services.json"
+          SERVICE_DOC = "docs/services/服务接入说明.md"
+
+          # 1) 注册表条目逐条解析（某条缺字段时只影响本条，不会串到下一条）
+          registry_text = read(REGISTRY)
+          if registry_text is None:
+              fail(f"缺少 {REGISTRY}")
+              registry_text = ""
+          block = re.search(r"\$script:McpServices\s*=\s*@\((.*)\)", registry_text, re.S)
+          services = []
+          for entry in re.findall(r"@\{(.*?)\n\s{4}\}", block.group(1) if block else "", re.S):
+              record = {"id": "", "key": "", "stack": "", "start": []}
+              for field, name in (("Id", "id"), ("ConfigKey", "key"), ("Stack", "stack")):
+                  matched = re.search(field + r"\s*=\s*'([^']*)'", entry)
+                  record[name] = matched.group(1) if matched else ""
+              matched = re.search(r"StartCommand\s*=\s*@\(([^)]*)\)", entry)
+              record["start"] = re.findall(r"'([^']*)'", matched.group(1)) if matched else []
+              services.append(record)
+          if not services:
+              fail(f"无法从 {REGISTRY} 解析服务条目（$script:McpServices 的写法可能已变）")
+
+          sample = load_json(SAMPLE)
+          schema = load_json(SCHEMA)
+          cases = load_json(CASES)
+          gateway_sample = load_json(GATEWAY_SAMPLE)
+
+          def keys_of(doc, name):
+              value = doc.get(name) if isinstance(doc, dict) else None
+              return list(value) if isinstance(value, dict) else []
+
+          def items_of(doc, name):
+              value = doc.get(name) if isinstance(doc, dict) else None
+              return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+          def block_of(text, variable):
+              matched = re.search(re.escape(variable) + r"\s*=\s*\[ordered\]@\{(.*?)\n\}", text, re.S)
+              return matched.group(1) if matched else ""
+
+          def child_of(doc, name):
+              value = doc.get(name) if isinstance(doc, dict) else None
+              return value if isinstance(value, dict) else {}
+
+          sample_keys = keys_of(sample, "services")
+          # Schema 里服务段的两个落点：definitions.services.properties.<配置段>（$ref）与 definitions.<配置段>（字段定义）；其余 definitions 是公共片段
+          schema_definitions = keys_of(schema, "definitions")
+          schema_properties = keys_of(child_of(child_of(schema, "definitions"), "services"), "properties")
+          schema_keys = [key for key in schema_properties if key in schema_definitions]
+          case_list = items_of(cases, "services")
+          gateway_block = block_of(read(GATEWAY_SOURCE) or "", "$script:McpGatewayNames")
+          gateway_names = dict(re.findall(r"'([a-z0-9-]+)'\s*=\s*'([^']+)'", gateway_block))
+          gateway_sample_names = list(keys_of(gateway_sample, "mcpServers")) if isinstance(gateway_sample, dict) and isinstance(gateway_sample.get("mcpServers"), dict) else []
+          wizard_keys = re.findall(r"^\s{4}([a-z][a-z0-9]*)\s*=\s*@\(", block_of(read(WIZARD) or "", "$script:McpSuiteFieldCatalog"), re.M)
+          field_doc_rows = re.findall(r"^\|\s*`services\.([a-z0-9]+)\.([A-Za-z0-9_]+)`\s*\|\s*([^|]*)\|", read(FIELD_DOC) or "", re.M)
+          service_doc_ids = re.findall(r"^##\s+\d+\.\s+(mcp-[a-z0-9-]+)", read(SERVICE_DOC) or "", re.M)
+
+          # 2) 每条注册表服务：工作流第 2–9 步的同步项
+          for svc in services:
+              sid, key = svc["id"], svc["key"]
+
+              def missing(step, what, sid=sid, key=key):
+                  fail(f"{sid or '<未知服务>'}（配置段 {key or '<未填>'}）第 {step} 步未完成：{what}")
+
+              if not sid or not key:
+                  missing(4, f"{REGISTRY} 的条目缺少 Id / ConfigKey")
+                  continue
+              start = svc["start"]
+              if len(start) < 2 or not all(start):
+                  missing(4, f"{REGISTRY} 中 {sid} 的 StartCommand 未回填（应为 [命令, 启动器] 两项）")
+                  continue
+              launcher = start[1].replace("\\", "/")
+              if launcher.split("/")[0] != sid:
+                  missing(2, f"StartCommand 的启动器 {launcher} 应位于 {sid}/ 目录下")
+              if not Path(launcher).is_file():
+                  missing(3, f"缺少启动器 {launcher}")
+              manifest = {"python": f"{sid}/requirements.txt", "node": f"{sid}/package.json"}.get(svc["stack"])
+              if manifest and not Path(manifest).is_file():
+                  missing(2, f"缺少依赖清单 {manifest}")
+
+              if key not in sample_keys:
+                  missing(5, f"{SAMPLE} 的 services 中缺少 {key} 配置段")
+              if key not in schema_keys:
+                  missing(5, f"{SCHEMA} 中缺少 {key}：须在 definitions.services.properties 新增同名键（$ref 指向 definitions.{key}），并在 definitions 新增 {key} 的字段定义")
+              if not [field for name, field, _required in field_doc_rows if name == key]:
+                  missing(5, f"{FIELD_DOC} 的字段全表中没有 services.{key}.* 的行")
+              if key not in wizard_keys:
+                  missing(6, f"{WIZARD} 的 $script:McpSuiteFieldCatalog 中缺少 {key} 的字段目录")
+              gateway_name = gateway_names.get(sid)
+              if not gateway_name:
+                  missing(7, f"{GATEWAY_SOURCE} 的 $script:McpGatewayNames 中没有 {sid}")
+              elif gateway_name not in gateway_sample_names:
+                  missing(7, f"{GATEWAY_SAMPLE} 的 mcpServers 中缺少 {gateway_name}")
+              if not Path(f"scripts/tests/test-{key}.bat").is_file():
+                  missing(8, f"缺少 scripts/tests/test-{key}.bat")
+              case = next((item for item in case_list if item.get("id") == sid), None)
+              if case is None:
+                  missing(8, f"{CASES} 的 services 中没有 id 为 {sid} 的用例")
+              elif case.get("configKey") != key or (gateway_name and case.get("gatewayName") != gateway_name):
+                  missing(8, f"{CASES} 中 {sid} 的 configKey / gatewayName 应为 {key} / {gateway_name}（当前：{case.get('configKey')} / {case.get('gatewayName')}）")
+              if sid not in service_doc_ids:
+                  missing(9, f"{SERVICE_DOC} 中没有「## <序号>. {sid}」小节")
+
+          # 3) 反向：各处多出未注册的服务同样报错
+          registry_keys = {svc["key"] for svc in services}
+          registry_ids = {svc["id"] for svc in services}
+          for key in sample_keys:
+              if key not in registry_keys:
+                  fail(f"{SAMPLE} 的 services.{key} 没有对应的注册表服务（第 4 步）：请在 {REGISTRY} 登记，或删除该配置段")
+          for key in schema_properties:
+              if key not in registry_keys:
+                  fail(f"{SCHEMA} 的 definitions.services.properties.{key} 没有对应的注册表服务（第 4 步）：请在 {REGISTRY} 登记，或删除该键")
+          for key in [key for key in schema_definitions if key in schema_properties or key not in ("services", "baseUrl", "instances")]:
+              if key not in registry_keys and key in sample_keys:
+                  fail(f"{SCHEMA} 的 definitions.{key} 对应未注册的服务（第 4 步）：请在 {REGISTRY} 登记，或删除该定义")
+          for key in sorted({name for name, _field, _required in field_doc_rows} - registry_keys):
+              fail(f"{FIELD_DOC} 含未注册服务的字段行：services.{key}.*")
+          for key in wizard_keys:
+              if key not in registry_keys:
+                  fail(f"{WIZARD} 的 $script:McpSuiteFieldCatalog 含未注册服务配置段 {key}")
+          for sid in gateway_names:
+              if sid not in registry_ids:
+                  fail(f"{GATEWAY_SOURCE} 的 $script:McpGatewayNames 含未注册服务 {sid}")
+          for name in gateway_sample_names:
+              if name not in set(gateway_names.values()):
+                  fail(f"{GATEWAY_SAMPLE} 的 mcpServers.{name} 没有对应的注册表服务（第 7 步）")
+          for item in case_list:
+              if item.get("id") not in registry_ids:
+                  fail(f"{CASES} 的用例 {item.get('id')} 没有对应的注册表服务（第 8 步）")
+          for sid in service_doc_ids:
+              if sid not in registry_ids:
+                  fail(f"{SERVICE_DOC} 的小节 {sid} 没有对应的注册表服务（第 9 步）")
+          # 脚手架生成了目录却忘了登记注册表：仓库根下带启动器的 mcp-* 目录必须在注册表中
+          for sid in sorted(name for name in os.listdir(".") if name.startswith("mcp-") and os.path.isdir(name) and any(f.startswith("launcher.") for f in os.listdir(name))):
+              if sid not in registry_ids:
+                  fail(f"服务目录 {sid}/ 已有启动器，但 {REGISTRY} 没有登记该服务（第 4 步）：请按新增 MCP 服务工作流补充注册表条目，或删除该目录")
+
+          for message in errors:
+              print(f"::error::{message}")
+          if errors:
+              print(f"新增服务一致性检查失败：共 {len(errors)} 项问题")
+              sys.exit(1)
+          print(f"新增服务一致性检查通过：{len(services)} 条服务（{' / '.join(svc['id'] for svc in services)}）均已同步到工作流第 2–9 步的各处")
+          PY
+
       - name: 网关路由样例校验
         run: |
           set -e
@@ -83,13 +268,14 @@ jobs:
               errors.append(message)
 
 
-          # 服务目录 -> 网关服务名；注册表新增服务时必须同步登记到这里与样例文件
-          SERVER_NAMES = {
-              "mcp-gerrit": "Gerrit",
-              "mcp-github": "GitHub",
-              "mcp-jenkins": "Jenkins",
-              "mcp-atlassian": "Atlassian",
-          }
+          # 服务目录 -> 网关服务名：唯一来源是 scripts/lib/gateway-routes.ps1 的 $script:McpGatewayNames
+          # （注册表新增服务时只改那里与样例文件，不改本步骤）
+          gateway_source = Path("scripts/lib/gateway-routes.ps1")
+          gateway_text = gateway_source.read_text(encoding="utf-8-sig") if gateway_source.is_file() else ""
+          names_block = re.search(r"\$script:McpGatewayNames\s*=\s*\[ordered\]@\{(.*?)\}", gateway_text, re.S)
+          SERVER_NAMES = dict(re.findall(r"'([a-z0-9-]+)'\s*=\s*'([^']+)'", names_block.group(1))) if names_block else {}
+          if not SERVER_NAMES:
+              fail("无法从 scripts/lib/gateway-routes.ps1 解析 $script:McpGatewayNames（服务目录 -> 网关服务名）")
           # 样例中的仓库根占位符（T-ENV-02）：由 mcpctl 菜单 8 生成 gateway.routes.json 时替换为本机绝对路径
           PLACEHOLDER = "${MCP_SUITE_ROOT}"
           CONFIG_NAME = "mcp.config.json"
@@ -118,7 +304,7 @@ jobs:
               if len(items) != 2:
                   fail(f"注册表 {service_id} 的 StartCommand 应为 [命令, 启动器] 两项（当前 {items}）")
               elif service_id not in SERVER_NAMES:
-                  fail(f"注册表新增了服务 {service_id}，须同步登记到本步骤的 SERVER_NAMES 与 gateway.routes.sample.json")
+                  fail(f"注册表新增了服务 {service_id}，须在 scripts/lib/gateway-routes.ps1 的 $script:McpGatewayNames 登记服务名，并同步 gateway.routes.sample.json")
 
           # 2) 样例结构：顶层只有 _comment 与 mcpServers；服务名恰为四条，且与注册表一一对应
           sample = None
@@ -195,19 +381,29 @@ jobs:
           python3 -c "import jsonschema" 2>/dev/null || python3 -m pip install --quiet jsonschema || python3 -m pip install --quiet --break-system-packages jsonschema
           python3 - <<'PY'
           import json
+          import re
           import sys
           from pathlib import Path
 
           import jsonschema
 
-          # 契约：四服务顺序固定；必填集合与 docs/services/配置字段说明.md 的“必填”列一致
-          SERVICES = ["gerrit", "github", "jenkins", "atlassian"]
-          EXPECTED_REQUIRED = {
-              "gerrit": ["enabled", "baseUrl", "username", "httpPassword"],
-              "github": ["enabled", "baseUrl", "pat"],
-              "jenkins": ["enabled", "baseUrl", "username", "apiToken"],
-              "atlassian": ["enabled", "deployment", "jiraBaseUrl", "confluenceBaseUrl", "personalAccessToken"],
-          }
+          # 契约来源（新增服务时不改本步骤）：
+          #   服务顺序 —— 注册表 scripts/mcpctl.config.ps1 的 ConfigKey 出现顺序；
+          #   必填集合 —— docs/services/配置字段说明.md 字段全表里「必填」列为「是」的行。
+          registry_file = Path("scripts/mcpctl.config.ps1")
+          registry_source_text = registry_file.read_text(encoding="utf-8-sig") if registry_file.is_file() else ""
+          SERVICES = re.findall(r"ConfigKey\s*=\s*'([^']+)'", registry_source_text)
+          field_doc_file = Path("docs/services/配置字段说明.md")
+          field_doc_text = field_doc_file.read_text(encoding="utf-8-sig") if field_doc_file.is_file() else ""
+          EXPECTED_REQUIRED = {name: [] for name in SERVICES}
+          for name, field in re.findall(r"^\|\s*`services\.([a-z0-9]+)\.([A-Za-z0-9_]+)`\s*\|\s*是\s*\|", field_doc_text, re.M):
+              if name in EXPECTED_REQUIRED:
+                  EXPECTED_REQUIRED[name].append(field)
+          launcher_paths = []
+          for group in re.findall(r"StartCommand\s*=\s*@\(([^)]*)\)", registry_source_text):
+              items = re.findall(r"'([^']*)'", group)
+              if len(items) >= 2:
+                  launcher_paths.append(items[1])
 
           errors = []
 
@@ -246,7 +442,7 @@ jobs:
                   fail("sample 缺少 services 对象")
                   services = {}
               elif list(services) != SERVICES:
-                  fail(f"sample 的 services 必须依次包含 {SERVICES}（当前：{list(services)}）")
+                  fail(f"sample 的 services 必须依次包含 {SERVICES}，顺序以注册表 ConfigKey 为准（当前：{list(services)}；新增服务时先在注册表登记，再补模板配置段）")
               hints = sample.get("_hints")
               if not isinstance(hints, dict):
                   fail("sample 缺少 _hints 对象")
@@ -296,7 +492,7 @@ jobs:
                           continue
                       required = sorted(service_schema.get("required", []))
                       if required != expected:
-                          fail(f"Schema 对 services.{name} 的必填集合 {required} 与契约 {expected} 不一致")
+                          fail(f"Schema 对 services.{name} 的必填集合 {required} 与契约 {expected} 不一致（契约取自 docs/services/配置字段说明.md 字段全表中「必填」列为「是」的行）")
                       section = services.get(name)
                       if not isinstance(section, dict):
                           continue
@@ -343,6 +539,7 @@ jobs:
                   core = matched.group(1)
               else:
                   fail("scripts/lib/suite-config.ps1 缺少 $script:McpSuiteTemplateValuePattern 定义（应为 '(?i)(关键词|关键词)' 形式）")
+          launchers = []
           if core:
               fingerprint = re.compile(core, re.IGNORECASE)
               # 真默认值（不是示例数据）：不要求命中指纹；新增此类字段时必须同步登记到这里
@@ -365,12 +562,11 @@ jobs:
                           fail(f"sample 的 {path} 是模板参考值，却未被模板参考值指纹命中：请把该参考值的关键词加入 McpSuiteTemplateValuePattern（并同步四个启动器），或确认为真默认值后登记到本步骤的白名单")
               if checked < 5:
                   fail(f"sample 中受指纹保护的参考值只有 {checked} 个（预期至少 5 个），指纹校验可能已失效")
-              launchers = (
-                  ("mcp-gerrit/launcher.py", f're.compile(r"{core}", re.IGNORECASE)'),
-                  ("mcp-atlassian/launcher.py", f're.compile(r"{core}", re.IGNORECASE)'),
-                  ("mcp-github/launcher.mjs", f"/({core})/i"),
-                  ("mcp-jenkins/launcher.mjs", f"/({core})/i"),
-              )
+              # 注册表每条服务的启动器（StartCommand 第二项）都必须带同一组指纹；按语言核对字面量写法
+              launchers = [
+                  (launcher, f're.compile(r"{core}", re.IGNORECASE)' if launcher.endswith(".py") else f"/({core})/i")
+                  for launcher in launcher_paths
+              ]
               for launcher, literal in launchers:
                   launcher_path = Path(launcher)
                   if not launcher_path.is_file():
@@ -400,7 +596,8 @@ jobs:
           for message in root_messages:
               if not message.startswith("环境变量 MCP_SUITE_ROOT ") or not message.endswith("。请改为正确的仓库根目录，或清除该变量后重试：{}"):
                   fail(f"环境变量 MCP_SUITE_ROOT 的报错文案应以「环境变量 MCP_SUITE_ROOT 」开头、以固定的修复提示结尾：{message}")
-          for launcher in ("mcp-gerrit/launcher.py", "mcp-atlassian/launcher.py", "mcp-github/launcher.mjs", "mcp-jenkins/launcher.mjs"):
+          # 核对范围取自注册表的 StartCommand（新增服务的启动器同样必须逐字一致）
+          for launcher, _fingerprint_literal in launchers:
               launcher_path = Path(launcher)
               if not launcher_path.is_file():
                   fail(f"缺少 {launcher}")
@@ -415,7 +612,7 @@ jobs:
           if errors:
               print(f"统一配置校验失败：共 {len(errors)} 项问题")
               sys.exit(1)
-          print(f"统一配置校验通过：{len(field_paths)} 个字段均有中文提示；Schema 必填集合与契约一致；sample 通过 Schema 校验；模板参考值均被指纹覆盖，四个启动器指纹一致；根路径环境变量报错文案一致")
+          print(f"统一配置校验通过：{len(field_paths)} 个字段均有中文提示；Schema 必填集合与契约一致；sample 通过 Schema 校验；模板参考值均被指纹覆盖，注册表全部启动器指纹一致；根路径环境变量报错文案一致")
           PY
 
       - name: 旧配置引用检查

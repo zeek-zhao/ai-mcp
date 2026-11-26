@@ -1,0 +1,89 @@
+name: 新增 MCP 服务
+description: 按《新增 MCP 服务工作流》登记一个新服务的接入任务（一个服务一个 Issue、一个 PR）
+title: "[feat][service] 新增 MCP 服务：<服务名>"
+labels: ["kind:feat", "area:mcpctl"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请按 `docs/planning/新增MCP服务工作流.md` 的 10 步填写。
+        约定：真实凭证不写进 Issue；一个服务一个 Issue，对应一个 PR；CI 的「新增服务一致性检查」会逐项核对第 2–9 步。
+  - type: input
+    id: service-id
+    attributes:
+      label: 服务 Id 与显示名
+      description: Id 形如 mcp-xxx（小写字母、数字、连字符），同时是服务目录名；配置段名默认取 Id 去掉 mcp- 前缀。
+      placeholder: "mcp-gitlab / GitLab 代码评审"
+    validations:
+      required: true
+  - type: dropdown
+    id: stack
+    attributes:
+      label: 技术栈（第 2 步）
+      options:
+        - python
+        - node
+    validations:
+      required: true
+  - type: textarea
+    id: upstream
+    attributes:
+      label: 上游评估（第 1 步）
+      description: 上游项目名、版本号、许可证、传输方式（须支持 stdio）、凭证类别与获取方式（只写类别与路径）、可用作自检的只读调用。
+    validations:
+      required: true
+  - type: textarea
+    id: deps
+    attributes:
+      label: 依赖与锁版本（第 2 步）
+      description: 依赖清单里写入的锁定版本；bootstrap.ps1 初始化结果（粘贴 -Check 输出，不含路径中的用户名）。
+      placeholder: |
+        requirements.txt：some-mcp-server==1.2.3
+        package.json + package-lock.json：固定版本
+  - type: textarea
+    id: launcher
+    attributes:
+      label: 启动器映射（第 3 步）
+      description: 字段中文名、必填字段校验、环境变量注入方式、拉起上游的方式；模板值拒启的 stderr 原文。
+  - type: textarea
+    id: registry
+    attributes:
+      label: 注册表条目（第 4 步）
+      description: scripts/new-mcp.ps1 打印的条目片段。
+      render: powershell
+  - type: textarea
+    id: config
+    attributes:
+      label: 统一配置（第 5 步）
+      description: 模板新增的配置段与 _hints、Schema 两处落点、配置字段说明新增的字段行。
+      render: json
+  - type: textarea
+    id: wizard
+    attributes:
+      label: 配置向导字段目录（第 6 步）
+      description: 新增的字段目录条目；确认字段集合与模板一致。
+      render: powershell
+  - type: textarea
+    id: gateway
+    attributes:
+      label: 网关样例与服务名（第 7 步）
+      description: McpGatewayNames 新增项与 gateway.routes.sample.json 新增条目。
+  - type: textarea
+    id: tests
+    attributes:
+      label: 自检用例（第 8 步）
+      description: test-<配置段>.bat 与 cases/services.json 新增条目（含实测工具数与只读调用）；run-tests.bat 的输出（不含凭证与实例地址）。
+  - type: textarea
+    id: docs
+    attributes:
+      label: 文档与台账（第 9 步）
+      description: 服务接入说明新增小节；任务清单、更新记录、台账的同步情况；是否需要 ADR。
+  - type: checkboxes
+    id: done
+    attributes:
+      label: 完成确认（第 10 步）
+      options:
+        - label: CI 全绿，含「新增服务一致性检查」「统一配置模板与 Schema 校验」「自检脚本结构模式（Windows）」
+        - label: 干净环境运行 scripts\bootstrap.ps1 后，scripts\tests\run-tests.bat --service <Id> 退出码为 0
+        - label: 真实凭证只读调用的结果已写入验收记录的「执行记录」（结论由负责人回填）
+        - label: 未把任何凭证值写入 Issue、PR、文档或提交信息
