@@ -104,8 +104,9 @@ magpie library mcp agents Gerrit <agent1,agent2,…>
 ### 4.2 按需行为（与直连的差异）
 
 - 直连：Host 在首次需要时拉起对应服务，Host 退出后服务退出。
-- 网关：Magpie 在**某个客户端（agent 会话）接入网关时一次性拉起四条已分派的服务**（不是等到第一次工具调用），之后复用这些进程；会话结束后进程**不退出**，空闲 5 分钟后仍在运行（实测）。即**网关模式下四服务常驻**，生命周期由 Magpie 管理，是 ADR-006「按需拉起」的例外（ADR-008）。
-- 因此统一配置 `mcp.config.json` 修改后，需要让 Magpie 重新拉起服务（退出并重启 Magpie）才会生效。
+- 网关：Magpie **按服务懒启动**。客户端接入网关、检索工具（`find_tools`）时不会启动任何服务进程；某个服务**第一次被调用**（`call_tool`）时才拉起该服务（实测：依次调用四个服务，服务进程数 0 → 5（Gerrit）→ 7（+GitHub）→ 8（+Jenkins）→ 10（+Atlassian））。会话结束后进程**不立即退出**，Magpie 复用它们供后续会话使用，**空闲约 10 分钟后回收**（实测：会话结束后空闲 568 秒时 10 个进程仍在，599 秒时全部退出）。这是 ADR-006「Host 直连、会话结束即退出」在回收时机上的例外（ADR-008），不是常驻。
+- 首次使用（Magpie 尚未缓存工具目录）时，`find_tools` 需要真实发现工具，四个服务会在检索阶段被逐个启动；之后检索走缓存。
+- 因此统一配置 `mcp.config.json` 修改后，需要让 Magpie 重新拉起服务（等空闲回收，或退出并重启 Magpie）才会生效。
 
 ### 4.3 客户端（网关密钥）分组授权
 
@@ -139,4 +140,4 @@ magpie library mcp agents Gerrit <agent1,agent2,…>
 | v0.3.0 | 2026-11-25 | zeek.zhao | 四条目 command/args 按 StartCommand 回填后的最终形态更新（gerrit venv exe+--config+stdio、node+launcher、venv python+launcher.py） | P0-1/P0-3，DEV-008/009，Issue #39 |
 | v0.4.0 | 2026-11-26 | zeek.zhao | 四条目改为启动器形态（gerrit 改为 venv python + launcher.py）并补充 env.MCP_SUITE_CONFIG；接入原则与注入规则改为统一配置口径；验证清单补充 MCP_SUITE_CONFIG 检查项 | 统一配置改造（ADR-007，T-DOC-01，Issue #57） |
 | v0.5.0 | 2026-11-26 | zeek.zhao | 验证清单「Host 退出后无残留进程」的复核方法更正：总控的遗留进程检测基于 PID 文件，不覆盖 Host 拉起的进程，改为引用端到端验收清单的进程观察命令 | 与实现对齐（T-VER-03，Issue #71） |
-| v0.6.0 | 2026-11-26 | zeek.zhao | 新增第 4 节「Magpie 网关模式（可选）」：四条路由与登记方式、按需行为实测（网关模式下四服务常驻）、客户端密钥分组授权建议（尚未创建）、工具命名与回退直连方法 | Magpie 网关接入（TASK-PROXY-01，ADR-008，Issue #85） |
+| v0.6.0 | 2026-11-26 | zeek.zhao | 新增第 4 节「Magpie 网关模式（可选）」：四条路由与登记方式、按需行为实测（按服务懒启动、会话结束后空闲约 10 分钟回收）、客户端密钥分组授权建议（尚未创建）、工具命名与回退直连方法 | Magpie 网关接入（TASK-PROXY-01，ADR-008，Issue #85） |
