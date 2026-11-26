@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "Gerrit": {
+      "command": "<仓库根>\\mcp-gerrit\\venv\\Scripts\\python.exe",
+      "args": ["<仓库根>\\mcp-gerrit\\launcher.py"],
+      "env": { "MCP_SUITE_CONFIG": "<仓库根>\\mcp.config.json" }
+    },
+    "GitHub": {
+      "command": "node",
+      "args": ["<仓库根>\\mcp-github\\launcher.mjs"],
+      "env": { "MCP_SUITE_CONFIG": "<仓库根>\\mcp.config.json" }
+    },
+    "Jenkins": {
+      "command": "node",
+      "args": ["<仓库根>\\mcp-jenkins\\launcher.mjs"],
+      "env": { "MCP_SUITE_CONFIG": "<仓库根>\\mcp.config.json" }
+    },
+    "Atlassian": {
+      "command": "<仓库根>\\mcp-atlassian\\venv\\Scripts\\python.exe",
+      "args": ["<仓库根>\\mcp-atlassian\\launcher.py"],
+      "env": { "MCP_SUITE_CONFIG": "<仓库根>\\mcp.config.json" }
+    }
+  }
+}

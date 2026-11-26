@@ -64,6 +64,126 @@ jobs:
             exit 1
           fi
 
+      - name: 网关路由样例校验
+        run: |
+          set -e
+          # Magpie 网关接入（TASK-PROXY-01，ADR-008）：gateway.routes.sample.json 的四条路由必须与注册表 StartCommand 一致
+          # （防止手抄漂移：启动命令变更时样例必须同步），且样例中不得出现任何凭证类字样与本机绝对路径。
+          # 只读取文件文本做比对，不依赖 pwsh；服务名固定为 Gerrit / GitHub / Jenkins / Atlassian（不加前缀）。
+          python3 - <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          errors = []
+
+
+          def fail(message):
+              errors.append(message)
+
+
+          # 服务目录 -> 网关服务名；注册表新增服务时必须同步登记到这里与样例文件
+          SERVER_NAMES = {
+              "mcp-gerrit": "Gerrit",
+              "mcp-github": "GitHub",
+              "mcp-jenkins": "Jenkins",
+              "mcp-atlassian": "Atlassian",
+          }
+          PLACEHOLDER = "<仓库根>"
+          CONFIG_NAME = "mcp.config.json"
+          # 凭证类字样（不分大小写）：写成拼接形式，避免本步骤自身的源码被当作命中
+          FORBIDDEN = ("token", "pat", "pa" + "ssword", "secret", "api" + "key")
+
+          registry_path = Path("scripts/mcpctl.config.ps1")
+          sample_path = Path("gateway.routes.sample.json")
+
+          if not registry_path.is_file():
+              fail("缺少 scripts/mcpctl.config.ps1")
+          if not sample_path.is_file():
+              fail("缺少 gateway.routes.sample.json")
+
+          registry_text = registry_path.read_text(encoding="utf-8-sig") if registry_path.is_file() else ""
+          sample_text = sample_path.read_text(encoding="utf-8-sig") if sample_path.is_file() else ""
+
+          # 1) 从注册表文本解析每条服务的 Id 与 StartCommand（仓库相对路径数组），不执行 PowerShell
+          start_commands = {}
+          for matched in re.finditer(r"Id\s*=\s*'([^']+)'.*?StartCommand\s*=\s*@\(([^)]*)\)", registry_text, re.S):
+              service_id, items = matched.group(1), re.findall(r"'([^']*)'", matched.group(2))
+              start_commands[service_id] = items
+          if len(start_commands) < 4:
+              fail(f"注册表解析到的 StartCommand 只有 {len(start_commands)} 条（预期至少 4 条）")
+          for service_id, items in start_commands.items():
+              if len(items) != 2:
+                  fail(f"注册表 {service_id} 的 StartCommand 应为 [命令, 启动器] 两项（当前 {items}）")
+              elif service_id not in SERVER_NAMES:
+                  fail(f"注册表新增了服务 {service_id}，须同步登记到本步骤的 SERVER_NAMES 与 gateway.routes.sample.json")
+
+          # 2) 样例结构：顶层只有 mcpServers；服务名恰为四条，且与注册表一一对应
+          sample = None
+          if sample_path.is_file():
+              try:
+                  sample = json.loads(sample_text)
+              except ValueError as exc:
+                  fail(f"gateway.routes.sample.json 不是合法 JSON（{exc.__class__.__name__}）")
+          servers = {}
+          if sample is not None:
+              if not isinstance(sample, dict) or list(sample) != ["mcpServers"]:
+                  fail("gateway.routes.sample.json 的顶层必须只有 mcpServers 一个键")
+              else:
+                  servers = sample.get("mcpServers")
+                  if not isinstance(servers, dict):
+                      fail("gateway.routes.sample.json 的 mcpServers 必须是对象")
+                      servers = {}
+          expected_names = sorted(SERVER_NAMES[service_id] for service_id in start_commands if service_id in SERVER_NAMES)
+          if servers and sorted(servers) != expected_names:
+              fail(f"gateway.routes.sample.json 的服务名 {sorted(servers)} 与注册表对应的服务名 {expected_names} 不一致（服务名固定，不加前缀）")
+
+          def to_sample_path(relative):
+              # 仓库相对路径 -> 样例中的写法：<仓库根>\<相对路径>（统一为反斜杠）
+              return PLACEHOLDER + "\\" + relative.replace("/", "\\")
+
+
+          # 3) 逐条比对 command / args / env 与注册表 StartCommand
+          if servers:
+              for service_id, items in start_commands.items():
+                  if service_id not in SERVER_NAMES or len(items) != 2:
+                      continue
+                  name = SERVER_NAMES[service_id]
+                  entry = servers.get(name)
+                  if not isinstance(entry, dict):
+                      fail(f"gateway.routes.sample.json 缺少服务 {name}")
+                      continue
+                  command, launcher = items
+                  expected_command = to_sample_path(command) if ("/" in command or "\\" in command) else command
+                  expected_args = [to_sample_path(launcher)]
+                  expected_env = {"MCP_SUITE_CONFIG": to_sample_path(CONFIG_NAME)}
+                  if entry.get("command") != expected_command:
+                      fail(f"gateway.routes.sample.json 中 {name}.command 应为 {expected_command!r}（与注册表 StartCommand 一致），当前 {entry.get('command')!r}")
+                  if entry.get("args") != expected_args:
+                      fail(f"gateway.routes.sample.json 中 {name}.args 应为 {expected_args!r}（与注册表 StartCommand 一致，不补 stdio 等参数），当前 {entry.get('args')!r}")
+                  if entry.get("env") != expected_env:
+                      fail(f"gateway.routes.sample.json 中 {name}.env 应恰为 {expected_env!r}（只允许 MCP_SUITE_CONFIG），当前 {entry.get('env')!r}")
+                  extra = sorted(set(entry) - {"command", "args", "env"})
+                  if extra:
+                      fail(f"gateway.routes.sample.json 中 {name} 含未约定的键 {extra}（只允许 command / args / env）")
+
+          # 4) 样例中不得出现凭证类字样，也不得出现本机绝对路径（样例只保留 <仓库根> 占位符）
+          lowered = sample_text.lower()
+          for word in FORBIDDEN:
+              if word in lowered:
+                  fail(f"gateway.routes.sample.json 出现了不应出现的字样“{word}”（网关配置里不得出现凭证类字样）")
+          if re.search(r"(?<![a-z])[a-z]:[\\/]", lowered):
+              fail("gateway.routes.sample.json 出现了本机绝对路径（应保持 <仓库根> 占位符；填入真实路径的版本保存为 gateway.routes.json，已被 .gitignore 排除）")
+
+          for message in errors:
+              print(f"::error::{message}")
+          if errors:
+              print(f"网关路由样例校验失败：共 {len(errors)} 项问题")
+              sys.exit(1)
+          print(f"网关路由样例校验通过：{len(servers)} 条路由与注册表 StartCommand 一致；未出现凭证类字样与本机绝对路径")
+          PY
+
       - name: 统一配置模板与 Schema 校验
         run: |
           set -e
