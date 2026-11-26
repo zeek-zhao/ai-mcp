@@ -14,6 +14,8 @@
 # 菜单 8「生成 Magpie 路由配置」的输出，以及选择「另存为带时间戳的副本」时生成的 gateway.routes.<时间戳>.json
 /gateway.routes.json
 /gateway.routes.*.json
+# 上面的通配规则会连带匹配样例文件名：显式放行样例，保证新克隆与 git add -A 时样例不被忽略
+!/gateway.routes.sample.json
 
 # ===== 运行时产物 =====
 logs/
