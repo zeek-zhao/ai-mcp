@@ -5,43 +5,29 @@
       "id": "mcp-gerrit",
       "configKey": "gerrit",
       "gatewayName": "Gerrit",
-      "expectedTools": 12,
-      "readOnlyCall": {
-        "tool": "query_changes",
-        "arguments": {
-          "query": "is:open limit:1"
-        }
-      }
+      "expectedTools": 20,
+      "readOnlyCall": { "tool": "query_changes", "arguments": { "query": "is:open limit:1" } }
     },
     {
       "id": "mcp-github",
       "configKey": "github",
       "gatewayName": "GitHub",
       "expectedTools": 46,
-      "readOnlyCall": {
-        "tool": "get_me",
-        "arguments": {}
-      }
+      "readOnlyCall": { "tool": "get_me", "arguments": {} }
     },
     {
       "id": "mcp-jenkins",
       "configKey": "jenkins",
       "gatewayName": "Jenkins",
       "expectedTools": 14,
-      "readOnlyCall": {
-        "tool": "getJobs",
-        "arguments": {}
-      }
+      "readOnlyCall": { "tool": "getJobs", "arguments": {} }
     },
     {
       "id": "mcp-atlassian",
       "configKey": "atlassian",
       "gatewayName": "Atlassian",
       "expectedTools": 98,
-      "readOnlyCall": {
-        "tool": "jira_get_all_projects",
-        "arguments": {}
-      }
+      "readOnlyCall": { "tool": "jira_get_all_projects", "arguments": {} }
     }
   ]
 }
