@@ -195,6 +195,26 @@ function Get-McpSuiteFieldLabel {
     return "$Path"
 }
 
+function Get-McpSuiteReadyIssueLines {
+    <#
+    .SYNOPSIS
+        把就绪判定结果里的逐字段问题转成展示行：“中文名（字段路径）：问题说明”，不含字段值。
+    .OUTPUTS
+        字符串数组；判定结果没有逐字段问题（如配置段缺失、文件无法解析）时返回空数组。
+    #>
+    param([Parameter(Mandatory = $true)]$Ready)
+
+    $lines = @()
+    $missing = @($Ready.Missing)
+    $kinds = @($Ready.MissingKind)
+    $texts = @($Ready.IssueText)
+    for ($i = 0; $i -lt $missing.Count; $i++) {
+        $text = if ($i -lt $texts.Count) { "$($texts[$i])" } else { '未填写，请填写' }
+        $lines += ('{0}（{1}）：{2}' -f (Get-McpSuiteFieldLabel -Path $missing[$i]), $missing[$i], $text)
+    }
+    return ,$lines
+}
+
 function Format-McpSuiteValue {
     # 控制台展示用的取值格式（数组按 JSON 列表形式展示）
     param($Value)
@@ -221,7 +241,9 @@ function Get-McpSuiteFieldStatusText {
     )
 
     if ("$($Field.Kind)" -eq 'reserved') { return '预留字段（当前版本不录入，保持留空）' }
-    $filled = Test-McpSuiteValueFilled -Value $Value
+    # 未填写的原因种类：placeholder 占位符 / template 模板参考值 / empty 空值；$null 或空串表示已填写
+    $issue = Get-McpSuiteValueIssue -Value $Value
+    $filled = [string]::IsNullOrEmpty("$issue")
     $sensitive = ("$($Field.Kind)" -eq 'secret')
     if ($filled) {
         if ($sensitive) { return '已设置' }
@@ -232,6 +254,11 @@ function Get-McpSuiteFieldStatusText {
     $required = [bool]$Field.Required
     $when = "$($Field.RequiredWhenDeployment)"
     if ($when -and $Deployment -eq $when) { $required = $true }
+    if ("$issue" -eq 'template') {
+        # 模板参考值（example.com / zhangsan 等）不算已设置：录入界面明确提示替换，避免被当成真实值
+        if ($required -and $ServiceEnabled) { return '未设置（必填；当前是模板参考值，需替换为真实值）' }
+        return '未设置（当前是模板参考值，需替换为真实值）'
+    }
     if ($required -and $ServiceEnabled) { return '未设置（必填）' }
     if ($required) { return '未设置（可留空：服务已禁用；启用后为必填）' }
     if ($sensitive) { return '未设置' }
@@ -332,9 +359,9 @@ function Write-McpSuiteReadyReport {
     }
     $missing = @($r.Missing)
     if ($missing.Count -gt 0) {
-        $labels = @($missing | ForEach-Object { Get-McpSuiteFieldLabel -Path $_ })
-        Write-Host ('就绪检查：未就绪。缺失字段：' + ($labels -join '、'))
-        Write-Host ('对应字段：' + ($missing -join '、'))
+        # 逐字段列出“中文名（字段路径）：问题说明”，占位符与模板参考值分开提示
+        Write-Host '就绪检查：未就绪。以下字段需要处理：'
+        foreach ($line in (Get-McpSuiteReadyIssueLines -Ready $r)) { Write-Host ('  - ' + $line) }
     }
     else {
         Write-Host ('就绪检查：未就绪（{0}）。' -f $r.Reason)
@@ -721,10 +748,8 @@ function Invoke-McpConnectivityTest {
     # —— Gerrit：只读 REST 验证（GET /a/accounts/self，HTTP Basic）——
     $ready = Test-McpSuiteConfigReady -Key $svc.ConfigKey | Select-Object -First 1
     if (-not $ready.Ready) {
-        $detail = $ready.Reason
-        if (@($ready.Missing).Count -gt 0) {
-            $detail += '（缺失：' + ((@($ready.Missing) | ForEach-Object { Get-McpSuiteFieldLabel -Path $_ }) -join '、') + '）'
-        }
+        $detail = (@(Get-McpSuiteReadyIssueLines -Ready $ready) -join '；')
+        if (-not $detail) { $detail = $ready.Reason }
         $result.Message = '配置未就绪（' + $detail + '）：请先运行配置向导（菜单 4）补齐 Gerrit 的实例地址、用户名与 HTTP 凭证。'
         Write-Host $result.Message
         return $result
@@ -787,7 +812,9 @@ function Invoke-McpConfigWizard {
             Write-Host ('生成失败：' + $_.Exception.Message)
             return
         }
-        Write-Host '已从模板生成统一配置文件，请逐字段录入。'
+        # 模板参考值（example / zhangsan 字样）不算已填写：生成后立即提醒，避免误以为只差凭证
+        Write-Host ($script:McpSuiteInitializedNotice -f $path)
+        Write-Host '请逐字段录入。'
     }
 
     try {

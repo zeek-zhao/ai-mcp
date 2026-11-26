@@ -9,7 +9,8 @@
 //   scope   仅作记录：官方服务器没有对应的限定参数，实际可见范围由令牌权限决定。
 //
 // 约束：stdout 只留给 MCP 协议，诊断信息一律写 stderr；任何输出不得包含令牌明文；
-// 占位符（<...> 形态）或空值视为未填写，拒绝启动（与 mcpctl 配置向导的就绪判定一致）。
+// 空值、占位符（<...> 形态）、模板参考值（带 example.com / zhangsan / yourcompany 等指纹）都视为未填写，
+// 拒绝启动（与 mcpctl 配置向导的就绪判定一致）。
 import { readFileSync, existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -29,6 +30,23 @@ function fail(message) {
 
 const isPlaceholder = (v) => /^\s*<.*>\s*$/.test(v);
 const text = (v) => (v === undefined || v === null ? "" : String(v)).trim();
+// 模板参考值指纹：关键词必须与 scripts/lib/suite-config.ps1 的 $script:McpSuiteTemplateValuePattern 一致（CI 校验）
+const TEMPLATE_VALUE_PATTERN = /(example\.com|example\.net|yourcompany|zhangsan|your-name|your-company)/i;
+
+// 值未填写时返回中文说明（空值 / 占位符 / 模板参考值分开提示，与 mcpctl 的就绪判定文案一致）；已填写返回 null。
+// 只给出命中的指纹关键词（如 example.com），不回显字段值。
+function unfilledText(value) {
+  if (!value) return "未填写，请填写";
+  if (isPlaceholder(value)) return "仍是占位符，需填写真实值";
+  const hit = TEMPLATE_VALUE_PATTERN.exec(value);
+  if (hit) return `仍是模板参考值（特征：${hit[1].toLowerCase()}），需替换为真实值`;
+  return null;
+}
+
+function requireFilled(name, value) {
+  const issue = unfilledText(value);
+  if (issue) fail(`统一配置 services.${KEY}.${name}（${LABELS[name]}）${issue}。`);
+}
 
 // 读取统一配置并返回 services.github 配置段；任何问题都以中文说明退出
 function loadSection() {
@@ -71,15 +89,11 @@ if (section.enabled !== true) {
 }
 const baseUrl = text(section.baseUrl).replace(/\/+$/, "");
 const pat = text(section.pat);
-if (!baseUrl || isPlaceholder(baseUrl)) {
-  fail(`统一配置 services.${KEY}.baseUrl（${LABELS.baseUrl}）未填写或仍是占位符，请填写后重试。`);
-}
+requireFilled("baseUrl", baseUrl);
 if (!/^https?:\/\//i.test(baseUrl)) {
   fail(`统一配置 services.${KEY}.baseUrl（${LABELS.baseUrl}）格式不正确：需以 http:// 或 https:// 开头。`);
 }
-if (!pat || isPlaceholder(pat)) {
-  fail(`统一配置 services.${KEY}.pat（${LABELS.pat}）未填写或仍是占位符，请填写后重试。`);
-}
+requireFilled("pat", pat);
 if (!existsSync(exe)) {
   fail(`二进制缺失：${exe}\n下一步：联网运行 mcp-github/setup-github-mcp.ps1 下载锁定版本的官方二进制后重试。`);
 }

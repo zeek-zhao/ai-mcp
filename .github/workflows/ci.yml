@@ -109,6 +109,7 @@ jobs:
           services = {}
           hints = {}
           field_paths = []
+          schema_services = {}
 
           if sample is not None:
               if not isinstance(sample, dict):
@@ -203,12 +204,62 @@ jobs:
                       where = ".".join(map(str, error.absolute_path)) or "<根>"
                       fail(f"sample 未通过 Schema 校验（{where}）：{error.message}".replace("\n", " "))
 
+          # 4) 模板参考值指纹（T-FIX-F）：唯一来源是 scripts/lib/suite-config.ps1 的 $script:McpSuiteTemplateValuePattern。
+          #    sample 里每个“非空、非占位符、非枚举”的字符串参考值都必须能被它命中（否则未替换的参考值会被判成已填写），
+          #    四个启动器必须使用同一组关键词（PowerShell / Python / JavaScript 字面量由本步骤逐一比对）。
+          import re
+
+          core = None
+          source_path = Path("scripts/lib/suite-config.ps1")
+          if not source_path.is_file():
+              fail("缺少 scripts/lib/suite-config.ps1")
+          else:
+              matched = re.search(r"\$script:McpSuiteTemplateValuePattern\s*=\s*'\(\?i\)\(([^']+)\)'", source_path.read_text(encoding="utf-8-sig"))
+              if matched:
+                  core = matched.group(1)
+              else:
+                  fail("scripts/lib/suite-config.ps1 缺少 $script:McpSuiteTemplateValuePattern 定义（应为 '(?i)(关键词|关键词)' 形式）")
+          if core:
+              fingerprint = re.compile(core, re.IGNORECASE)
+              # 真默认值（不是示例数据）：不要求命中指纹；新增此类字段时必须同步登记到这里
+              true_defaults = {"services.github.baseUrl", "services.gerrit.instanceName"}
+              checked = 0
+              for name in SERVICES:
+                  section = services.get(name)
+                  if not isinstance(section, dict):
+                      continue
+                  for field, value in section.items():
+                      path = f"services.{name}.{field}"
+                      if not isinstance(value, str) or not value.strip() or re.match(r"^\s*<.*>\s*$", value):
+                          continue
+                      field_schema = resolve(schema_services.get("properties", {}).get(name)) if schema_services else {}
+                      enum = resolve(field_schema.get("properties", {}).get(field)).get("enum", []) if field_schema else []
+                      if value in enum or path in true_defaults:
+                          continue
+                      checked += 1
+                      if not fingerprint.search(value):
+                          fail(f"sample 的 {path} 是模板参考值，却未被模板参考值指纹命中：请把该参考值的关键词加入 McpSuiteTemplateValuePattern（并同步四个启动器），或确认为真默认值后登记到本步骤的白名单")
+              if checked < 5:
+                  fail(f"sample 中受指纹保护的参考值只有 {checked} 个（预期至少 5 个），指纹校验可能已失效")
+              launchers = (
+                  ("mcp-gerrit/launcher.py", f're.compile(r"{core}", re.IGNORECASE)'),
+                  ("mcp-atlassian/launcher.py", f're.compile(r"{core}", re.IGNORECASE)'),
+                  ("mcp-github/launcher.mjs", f"/({core})/i"),
+                  ("mcp-jenkins/launcher.mjs", f"/({core})/i"),
+              )
+              for launcher, literal in launchers:
+                  launcher_path = Path(launcher)
+                  if not launcher_path.is_file():
+                      fail(f"缺少 {launcher}")
+                  elif literal not in launcher_path.read_text(encoding="utf-8-sig"):
+                      fail(f"{launcher} 的模板参考值指纹与 suite-config.ps1 不一致：应包含字面量 {literal}")
+
           for message in errors:
               print(f"::error::{message}")
           if errors:
               print(f"统一配置校验失败：共 {len(errors)} 项问题")
               sys.exit(1)
-          print(f"统一配置校验通过：{len(field_paths)} 个字段均有中文提示；Schema 必填集合与契约一致；sample 通过 Schema 校验")
+          print(f"统一配置校验通过：{len(field_paths)} 个字段均有中文提示；Schema 必填集合与契约一致；sample 通过 Schema 校验；模板参考值均被指纹覆盖，四个启动器指纹一致")
           PY
 
       - name: 旧配置引用检查

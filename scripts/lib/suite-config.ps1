@@ -12,17 +12,20 @@
       1. 兼容 Windows PowerShell 5.1：不使用 ConvertFrom-Json -AsHashtable，
          读取结果统一转换为 [ordered]@{}（保持文件中的键顺序）。
       2. 写入格式固定：UTF-8 无 BOM、2 空格缩进；顶层键顺序 configVersion → _comment →
-         services → _hints，services 内各段顺序与注册表一致，段内保持文件原有字段顺序。
+         services，services 内各段顺序与注册表一致，段内保持文件原有字段顺序。
+         _hints（字段中文提示）只保留在模板 mcp.config.sample.json：从模板生成、或经向导
+         写入 mcp.config.json 时都不带入 _hints（T-FIX-F / T-FIX-J）。
       3. 原子写入：先写同目录临时文件，再替换目标文件；任何一步失败都不留下半截文件，
          原文件保持不变。
       4. 错误信息全部为中文，且【绝不包含字段值】（文件中有凭证）。
-      5. _comment 与 _hints 是给人看的说明，程序逻辑必须忽略它们，缺失不影响读写。
+      5. _comment 与 _hints 是给人看的说明，程序逻辑必须忽略它们，缺失不影响读写；
+       读取时兼容仍带 _hints 的旧 mcp.config.json，写入时不再保留。
 
     字段含义见 docs/services/配置字段说明.md；结构契约见 mcp.config.schema.json。
 
 .NOTES
     分工：JSON Schema 只管结构（键名、类型、枚举）；“必填项是否已填写、是否仍是
-    <...> 占位符”属于就绪判定，由本模块的 Test-McpSuiteConfigReady 负责。
+    <...> 占位符”、是否还是模板参考值属于就绪判定，由本模块的 Test-McpSuiteConfigReady 负责。
 #>
 
 # 加载注册表（服务清单：ConfigKey 即统一配置中的段名）
@@ -30,6 +33,16 @@
 
 # 占位符形态：<...>（模板参考值中尚未替换的项），就绪判定视为“未填写”
 $script:McpSuitePlaceholderPattern = '^\s*<.*>\s*$'
+
+# 模板参考值指纹（T-FIX-F）：模板 mcp.config.sample.json 里的示例值（example.com、zhangsan、
+# yourcompany 等）看起来像真实值，但不是。必填字段命中本指纹时视为“未填写”，服务不会被判就绪。
+# 【唯一来源】CI 从本行读取指纹，校验两件事：模板里的每个字符串参考值都能被本指纹命中；
+# 四个启动器（mcp-*/launcher.py、launcher.mjs）内嵌的同一指纹与本行一致。修改指纹须同步启动器。
+$script:McpSuiteTemplateValuePattern = '(?i)(example\.com|example\.net|yourcompany|zhangsan|your-name|your-company)'
+
+# 从模板生成 mcp.config.json 时写入的 _comment（本地文件不带入模板的 _hints 与长说明）
+$script:McpSuiteConfigComment = '本文件由模板 mcp.config.sample.json 生成，含真实凭证，已被 .gitignore 忽略，严禁提交 Git。带 example / zhangsan / yourcompany 字样的值是模板参考值，必须替换为真实值，否则对应服务不会被判定为就绪。字段说明见 docs/services/配置字段说明.md。'
+$script:McpSuiteInitializedNotice = '已生成 {0}：其中带 example / zhangsan 字样的值均为模板参考值，未替换的服务不会被判定为就绪。'
 
 # 统一配置模板文件名（位于仓库根；仓库内唯一随仓库分发的配置文件）
 $script:McpSuiteSampleFileName = 'mcp.config.sample.json'
@@ -417,7 +430,9 @@ function ConvertTo-McpSuiteFieldValue {
 
 <#
 .SYNOPSIS
-    更新统一配置中某个服务的若干字段（其他字段、其他服务段、_comment 与 _hints 原样保留）。
+    更新统一配置中某个服务的若干字段（其他字段、其他服务段与 _comment 原样保留）。
+    写入时不保留顶层 _hints：字段提示集中在模板 mcp.config.sample.json 与
+    docs/services/配置字段说明.md，本地 mcp.config.json 不再携带（T-FIX-F / T-FIX-J）。
 
 .DESCRIPTION
     - 只改 $Values 中给出的字段；字段名必须是模板或该段现有的字段，防止拼错。
@@ -516,14 +531,16 @@ function Set-McpSuiteConfigSection {
         if (-not $newServices.Contains("$sk")) { $newServices["$sk"] = $services[$sk] }
     }
 
-    # 组装顶层：configVersion → _comment → services → _hints，其余键按原顺序排在后面
+    # 组装顶层：configVersion → _comment → services，其余键按原顺序排在后面；
+    # _hints 不写入（只保留在模板；旧文件若带 _hints，经本次写入后即被移除）
     $newCfg = [ordered]@{}
     $newCfg['configVersion'] = $cfg['configVersion']
-    foreach ($topName in @('_comment', 'services', '_hints')) {
+    foreach ($topName in @('_comment', 'services')) {
         if ($topName -eq 'services') { $newCfg['services'] = $newServices; continue }
         if ($cfg.Contains($topName)) { $newCfg[$topName] = $cfg[$topName] }
     }
     foreach ($tk in $cfg.Keys) {
+        if ($tk -eq '_hints') { continue }
         if (-not $newCfg.Contains("$tk")) { $newCfg["$tk"] = $cfg[$tk] }
     }
 
@@ -544,14 +561,43 @@ function Set-McpSuiteConfigSection {
 # 就绪判定 / 初始化 / 提示
 # ---------------------------------------------------------------------------
 
-function Test-McpSuiteValueFilled {
-    # 值已填写：非空，且不是 <...> 占位符
+function Get-McpSuiteValueIssue {
+    # 返回“未填写”的原因种类；已填写返回 $null：
+    #   placeholder —— <...> 占位符；template —— 模板参考值（带 example.com / zhangsan 等指纹）；empty —— 空值。
+    # 只换了凭证、地址与用户名仍是模板示例的配置不能被判定为就绪（T-FIX-F）。
     param($Value)
-    if ($null -eq $Value) { return $false }
-    if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) { return $true }
+    if ($null -eq $Value) { return 'empty' }
+    if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) { return $null }
     $s = "$Value"
-    if ([string]::IsNullOrWhiteSpace($s)) { return $false }
-    return ($s -notmatch $script:McpSuitePlaceholderPattern)
+    if ([string]::IsNullOrWhiteSpace($s)) { return 'empty' }
+    if ($s -match $script:McpSuitePlaceholderPattern) { return 'placeholder' }
+    if ($s -match $script:McpSuiteTemplateValuePattern) { return 'template' }
+    return $null
+}
+
+function Get-McpSuiteIssueText {
+    # 把“未填写”的原因种类转成中文说明（不含字段值）：
+    # 占位符与模板参考值分开说，用户能直接看出是“没填”还是“忘了改示例值”
+    param([AllowEmptyString()][string]$Kind, $Value)
+
+    switch ($Kind) {
+        'placeholder' { return '仍是占位符，需填写真实值' }
+        'template' {
+            $feature = ''
+            $s = "$Value"
+            if ($s -match $script:McpSuiteTemplateValuePattern) { $feature = $Matches[1].ToLowerInvariant() }
+            if ($feature) { return ('仍是模板参考值（特征：{0}），需替换为真实值' -f $feature) }
+            return '仍是模板参考值，需替换为真实值'
+        }
+        'invalid' { return '只能是 cloud 或 server' }
+        default { return '未填写，请填写' }
+    }
+}
+
+function Test-McpSuiteValueFilled {
+    # 值已填写：非空，既不是 <...> 占位符，也不是模板参考值
+    param($Value)
+    return ($null -eq (Get-McpSuiteValueIssue -Value $Value))
 }
 
 <#
@@ -560,7 +606,7 @@ function Test-McpSuiteValueFilled {
 
 .DESCRIPTION
     就绪 = 配置文件存在且可解析、该服务段存在、enabled=true、启用条件下的必填字段均已填写
-    （空值与 <...> 占位符都算未填写）。enabled=false 的服务记为“已禁用”，必填项可留空。
+    （空值、<...> 占位符、模板参考值都算未填写）。enabled=false 的服务记为“已禁用”，必填项可留空。
 
 .PARAMETER Key
     配置段名（注册表 ConfigKey）；省略时返回全部服务。
@@ -568,7 +614,11 @@ function Test-McpSuiteValueFilled {
 .OUTPUTS
     每个服务一个对象：Code / Id / DisplayName / Key / FileExists / FileValid / SectionExists /
     Enabled / Ready / State（已就绪 | 已禁用 | 未就绪）/ Missing（未填写的字段路径，如
-    services.gerrit.baseUrl）/ Reason（未就绪的中文原因）
+    services.gerrit.baseUrl）/ MissingKind（与 Missing 一一对应：placeholder 占位符 |
+    template 模板参考值 | empty 空值 | invalid 取值非法）/ IssueText（与 Missing 一一对应的中文说明，
+    不含字段值）/ Reason（未就绪的中文原因；逐字段问题为“字段路径 + 说明”，用“；”连接）。
+    模板参考值指模板里的示例值（带 example.com / zhangsan / yourcompany 等指纹），见
+    $script:McpSuiteTemplateValuePattern（T-FIX-F）。
 #>
 function Test-McpSuiteConfigReady {
     [CmdletBinding()]
@@ -606,6 +656,8 @@ function Test-McpSuiteConfigReady {
             Enabled       = $false
             Ready         = $false
             Missing       = @()
+            MissingKind   = @()
+            IssueText     = @()
             Reason        = ''
             State         = '未就绪'
         }
@@ -631,31 +683,41 @@ function Test-McpSuiteConfigReady {
                 }
                 else {
                     $r.Enabled = $true
+                    # Missing / MissingKind / IssueText 三个数组一一对应
                     $missing = @()
+                    $kinds = @()
+                    $issues = @()
                     $required = @($script:McpSuiteRequiredFields[$canon])
-                    $badDeployment = $false
                     if ($canon -eq 'atlassian') {
                         $deployment = if ($section.Contains('deployment')) { "$($section['deployment'])".Trim().ToLowerInvariant() } else { '' }
                         if ($deployment -eq 'cloud') { $required += 'email' }
                         if ((Test-McpSuiteValueFilled -Value $deployment) -and ($script:McpSuiteDeployments -notcontains $deployment)) {
-                            $badDeployment = $true
                             $missing += 'services.atlassian.deployment'
+                            $kinds += 'invalid'
+                            $issues += (Get-McpSuiteIssueText -Kind 'invalid')
                         }
                     }
                     foreach ($f in $required) {
                         $v = if ($section.Contains($f)) { $section[$f] } else { $null }
-                        if (-not (Test-McpSuiteValueFilled -Value $v)) { $missing += "services.$canon.$f" }
+                        $kind = Get-McpSuiteValueIssue -Value $v
+                        if ($kind) {
+                            $missing += "services.$canon.$f"
+                            $kinds += $kind
+                            $issues += (Get-McpSuiteIssueText -Kind $kind -Value $v)
+                        }
                     }
                     $r.Missing = $missing
+                    $r.MissingKind = $kinds
+                    $r.IssueText = $issues
                     if ($missing.Count -eq 0) {
                         $r.Ready = $true
                         $r.State = '已就绪'
                     }
-                    elseif ($badDeployment) {
-                        $r.Reason = 'deployment 只能是 cloud 或 server'
-                    }
                     else {
-                        $r.Reason = '必填项未填写或仍为占位符'
+                        # 逐字段“路径 + 说明”，只给出命中的指纹关键词，不回显字段值（真实值可能含内部地址）
+                        $sentences = @()
+                        for ($i = 0; $i -lt $missing.Count; $i++) { $sentences += ($missing[$i] + ' ' + $issues[$i]) }
+                        $r.Reason = ($sentences -join '；')
                     }
                 }
             }
@@ -673,6 +735,12 @@ function Test-McpSuiteConfigReady {
 
 .PARAMETER Force
     目标文件已存在时仍然覆盖（会丢失现有配置，调用方须先确认）。
+
+.NOTES
+    生成的本地配置与模板有两处不同（T-FIX-F）：不带入 _hints（字段提示留在模板与
+    docs/services/配置字段说明.md）；_comment 换成一句提醒。模板里的参考值原样带入，
+    其中带 example / zhangsan / yourcompany 字样的值必须替换，否则对应服务不会被判就绪
+    （提示语见 $script:McpSuiteInitializedNotice，由调用方在生成后打印）。
 #>
 function Initialize-McpSuiteConfigFromSample {
     [CmdletBinding()]
@@ -686,8 +754,25 @@ function Initialize-McpSuiteConfigFromSample {
     if ((Test-Path -LiteralPath $path) -and -not $Force) {
         throw "统一配置已存在：$path（如需用模板覆盖请加 -Force，覆盖会丢失现有配置）"
     }
-    $text = [IO.File]::ReadAllText($samplePath, [Text.Encoding]::UTF8)
-    $null = ConvertFrom-McpSuiteConfigText -Text $text -Path $samplePath
+    $sampleText = [IO.File]::ReadAllText($samplePath, [Text.Encoding]::UTF8)
+    $sample = ConvertFrom-McpSuiteConfigText -Text $sampleText -Path $samplePath
+
+    # 顶层顺序固定：configVersion → _comment（一句提醒）→ services；模板的其余顶层键（不含 _hints）按原顺序保留
+    $cfg = [ordered]@{}
+    $cfg['configVersion'] = $sample['configVersion']
+    $cfg['_comment'] = $script:McpSuiteConfigComment
+    $cfg['services'] = $sample['services']
+    foreach ($k in $sample.Keys) {
+        if (@('configVersion', '_comment', 'services', '_hints') -contains "$k") { continue }
+        $cfg["$k"] = $sample[$k]
+    }
+    $text = (ConvertTo-McpJsonString -Value $cfg) + "`n"
+    try {
+        $null = ConvertFrom-McpSuiteConfigText -Text $text -Path '（待写入的内容）'
+    }
+    catch {
+        throw ('生成的统一配置文本未通过自检，已中止写入（原文件未改动）：{0}' -f $_.Exception.Message)
+    }
     Write-McpSuiteConfigAtomic -Path $path -Text $text
     return $path
 }

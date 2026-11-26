@@ -1,6 +1,6 @@
 {
   "configVersion": 1,
-  "_comment": "统一配置模板。使用方法：复制本文件为仓库根目录的 mcp.config.json，再按 _hints 逐项填写。mcp.config.json 含真实凭证，已被 .gitignore 忽略，严禁提交 Git。占位符统一写作 <...>，尖括号内是填写说明而不是真实值；必填项仍是占位符的服务视为未就绪。字段说明见 docs/services/配置字段说明.md，结构校验见 mcp.config.schema.json。",
+  "_comment": "统一配置模板。使用方法：复制本文件为仓库根目录的 mcp.config.json（或运行 mcpctl 配置向导自动生成），再逐项填写；各字段的填写说明见本文件 _hints 与 docs/services/配置字段说明.md。mcp.config.json 含真实凭证，已被 .gitignore 忽略，严禁提交 Git。占位符统一写作 <...>，尖括号内是填写说明而不是真实值；带 example / zhangsan / yourcompany 字样的值是模板参考值、不是真实值，必须全部替换；必填项仍是占位符或模板参考值的服务视为未就绪。结构校验见 mcp.config.schema.json。",
   "services": {
     "gerrit": {
       "enabled": true,
