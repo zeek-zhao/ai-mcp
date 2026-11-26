@@ -1,7 +1,9 @@
 // GitHub 官方 MCP server（stdio）本地启动器（模型一：由 Host 按需拉起，本进程生命周期完全由 Host 管理）。
 //
 // 配置来源：仓库根统一配置 mcp.config.json 的 services.github 配置段。
-//   路径优先取环境变量 MCP_SUITE_CONFIG（绝对路径），未设置时回退到 <本服务目录>/../mcp.config.json。
+//   路径优先取环境变量 MCP_SUITE_CONFIG（绝对路径）；其次取环境变量 MCP_SUITE_ROOT（仓库根目录）下的
+//   mcp.config.json；两者都未设置时回退到 <本服务目录>/../mcp.config.json。
+//   MCP_SUITE_ROOT 已设置但无效时报错退出、不回退（判定与文案与 scripts/lib/registry.ps1 一致）。
 // 字段映射：
 //   pat     -> GITHUB_PERSONAL_ACCESS_TOKEN（官方服务器读取的变量名）
 //   baseUrl -> GITHUB_HOST（官方服务器的 API 主机；填 https://github.com 时自动改写为 https://api.github.com，
@@ -48,10 +50,29 @@ function requireFilled(name, value) {
   if (issue) fail(`统一配置 services.${KEY}.${name}（${LABELS[name]}）${issue}。`);
 }
 
+const ROOT_CLEAR_COMMAND = 'setx MCP_SUITE_ROOT ""';
+
+// 定位统一配置：MCP_SUITE_CONFIG > MCP_SUITE_ROOT/mcp.config.json > <本服务目录>/../mcp.config.json
+function resolveConfigPath() {
+  const override = text(process.env.MCP_SUITE_CONFIG);
+  if (override) return path.resolve(override);
+  const rootEnv = text(process.env.MCP_SUITE_ROOT);
+  if (rootEnv) {
+    // 与 scripts/lib/registry.ps1 的判定和报错文案保持逐字一致；无效时不回退
+    if (!path.isAbsolute(rootEnv)) {
+      fail(`环境变量 MCP_SUITE_ROOT 必须是仓库根目录的绝对路径，当前为：${rootEnv}。请改为正确的仓库根目录，或清除该变量后重试：${ROOT_CLEAR_COMMAND}`);
+    }
+    if (!existsSync(path.join(rootEnv, "scripts", "mcpctl.config.ps1"))) {
+      fail(`环境变量 MCP_SUITE_ROOT 指向的目录不是本仓库根（缺少 scripts/mcpctl.config.ps1）：${rootEnv}。请改为正确的仓库根目录，或清除该变量后重试：${ROOT_CLEAR_COMMAND}`);
+    }
+    return path.join(rootEnv, "mcp.config.json");
+  }
+  return path.join(here, "..", "mcp.config.json");
+}
+
 // 读取统一配置并返回 services.github 配置段；任何问题都以中文说明退出
 function loadSection() {
-  const override = text(process.env.MCP_SUITE_CONFIG);
-  const configPath = override ? path.resolve(override) : path.join(here, "..", "mcp.config.json");
+  const configPath = resolveConfigPath();
   if (!existsSync(configPath)) {
     fail(`统一配置文件不存在：${configPath}\n下一步：运行 mcpctl 配置向导（scripts/mcpctl.ps1 菜单 4）从模板生成 mcp.config.json 并填写。`);
   }

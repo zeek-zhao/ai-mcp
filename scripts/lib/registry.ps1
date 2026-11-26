@@ -13,17 +13,78 @@
 .NOTES
     本文件只提供【读取类】基础函数；服务进程不由 mcpctl 托管（ADR-006），诊断与握手探活见 service-utils.ps1。
     Test-McpRegistry 会校验注册表的 ConfigKey 与统一配置模板 mcp.config.sample.json 的 services 键一致。
+    仓库根目录的来源（T-ENV-01）：环境变量 MCP_SUITE_ROOT（仓库根目录的绝对路径）优先，未设置时由脚本自身位置推断；
+    已设置但无效时不静默回退——Get-McpRepoRoot 抛出中文错误，登录预检把它作为单独的未通过项报告。
 #>
 
 # 加载数据源（服务注册表与全局参数）
 . (Join-Path -Path $PSScriptRoot -ChildPath '..\mcpctl.config.ps1')
 
+# ---------------------------------------------------------------------------
+# 仓库根目录来源（T-ENV-01）
+#   优先级：环境变量 MCP_SUITE_ROOT > 由脚本自身位置推断（scripts 的上一级）。
+#   环境变量已设置但无效时【不静默回退】：Get-McpRepoRoot 一经调用即抛出中文错误（含清除命令）。
+#   四个启动器（mcp-*/launcher.*）按同一优先级定位统一配置，报错文案与本处保持逐字一致（CI 校验）。
+# ---------------------------------------------------------------------------
+$script:McpRepoRootEnvName = 'MCP_SUITE_ROOT'
+$script:McpRepoRootSourceText = '由脚本位置推断'
+$script:McpRepoRootIssue = ''
+$script:McpRepoRootResolved = $script:McpCtlGlobal.RepoRoot
+$script:McpRepoRootClearCommand = 'setx MCP_SUITE_ROOT ""'
+$script:McpRepoRootNotAbsolutePattern = '环境变量 MCP_SUITE_ROOT 必须是仓库根目录的绝对路径，当前为：{0}。请改为正确的仓库根目录，或清除该变量后重试：{1}'
+$script:McpRepoRootNotRepoPattern = '环境变量 MCP_SUITE_ROOT 指向的目录不是本仓库根（缺少 scripts/mcpctl.config.ps1）：{0}。请改为正确的仓库根目录，或清除该变量后重试：{1}'
+$mcpRepoRootRaw = [Environment]::GetEnvironmentVariable($script:McpRepoRootEnvName)
+if (-not [string]::IsNullOrWhiteSpace($mcpRepoRootRaw)) {
+    $mcpRepoRootValue = $mcpRepoRootRaw.Trim()
+    if (-not [IO.Path]::IsPathRooted($mcpRepoRootValue)) {
+        $script:McpRepoRootIssue = $script:McpRepoRootNotAbsolutePattern -f @($mcpRepoRootValue, $script:McpRepoRootClearCommand)
+    }
+    elseif (-not (Test-Path -LiteralPath (Join-Path $mcpRepoRootValue 'scripts\mcpctl.config.ps1') -PathType Leaf)) {
+        $script:McpRepoRootIssue = $script:McpRepoRootNotRepoPattern -f @($mcpRepoRootValue, $script:McpRepoRootClearCommand)
+    }
+    else {
+        $script:McpRepoRootResolved = (Resolve-Path -LiteralPath $mcpRepoRootValue).ProviderPath
+        $script:McpRepoRootSourceText = '来自环境变量 MCP_SUITE_ROOT'
+    }
+}
+Remove-Variable -Name mcpRepoRootRaw, mcpRepoRootValue -ErrorAction SilentlyContinue
+
 <#
 .SYNOPSIS
     获取仓库根目录（绝对路径）。
+
+.DESCRIPTION
+    来源优先级：环境变量 MCP_SUITE_ROOT > 由脚本自身位置推断。
+    环境变量已设置但无效时抛出中文错误（不回退到脚本位置）；调用方需要“只判断不抛错”时用 Get-McpRepoRootIssue。
 #>
 function Get-McpRepoRoot {
-    return $script:McpCtlGlobal.RepoRoot
+    if ($script:McpRepoRootIssue) { throw $script:McpRepoRootIssue }
+    return $script:McpRepoRootResolved
+}
+
+<#
+.SYNOPSIS
+    获取仓库根目录的来源说明（用于启动时打印“[根路径] …”）。
+#>
+function Get-McpRepoRootSourceText {
+    if ($script:McpRepoRootIssue) { throw $script:McpRepoRootIssue }
+    return $script:McpRepoRootSourceText
+}
+
+<#
+.SYNOPSIS
+    环境变量 MCP_SUITE_ROOT 已设置但无效时返回错误说明（中文，含修复办法），有效或未设置时返回空字符串。不抛错。
+#>
+function Get-McpRepoRootIssue {
+    return $script:McpRepoRootIssue
+}
+
+<#
+.SYNOPSIS
+    清除环境变量 MCP_SUITE_ROOT 的命令（供错误提示与修复建议引用）。
+#>
+function Get-McpRepoRootClearCommand {
+    return $script:McpRepoRootClearCommand
 }
 
 <#
@@ -60,7 +121,7 @@ function Resolve-McpStartCommand {
     param([AllowNull()]$Command)
 
     if (-not $Command) { return $null }
-    $root = $script:McpCtlGlobal.RepoRoot
+    $root = Get-McpRepoRoot
     $parts = @($Command)
     $resolved = @()
     for ($i = 0; $i -lt $parts.Count; $i++) {
@@ -99,7 +160,7 @@ function Resolve-McpStartCommand {
     System.Management.Automation.PSCustomObject[]
 #>
 function Get-McpServices {
-    $root = $script:McpCtlGlobal.RepoRoot
+    $root = Get-McpRepoRoot
     foreach ($svc in $script:McpServices) {
         [pscustomobject]@{
             Code                  = $svc.Code
@@ -205,7 +266,7 @@ function Test-McpRegistry {
 
     # ConfigKey 与统一配置模板的 services 键双向一致
     $sampleRelative = 'mcp.config.sample.json'
-    $samplePath = Join-Path $script:McpCtlGlobal.RepoRoot $sampleRelative
+    $samplePath = Join-Path (Get-McpRepoRoot) $sampleRelative
     $sampleKeys = @()
     if (-not (Test-Path -LiteralPath $samplePath -PathType Leaf)) {
         $problems += "统一配置模板不存在：$sampleRelative"

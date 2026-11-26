@@ -106,6 +106,15 @@ function Invoke-McpBootstrap {
         [string]$Code
     )
 
+    $rootIssue = Get-McpRepoRootIssue
+    if ($rootIssue) {
+        # 环境变量 MCP_SUITE_ROOT 已设置但无效：不回退到脚本位置（T-ENV-01）
+        Write-Host ('[根路径] 环境变量 MCP_SUITE_ROOT 无效，未回退到脚本位置：{0}' -f $rootIssue)
+        Write-Host '    说明：setx 只对之后新开的窗口生效；当前窗口可先执行 Remove-Item Env:\MCP_SUITE_ROOT'
+        return 1
+    }
+    Write-Host ('[根路径] ' + (Get-McpRepoRootSourceText))
+
     $services = Get-McpServices
     if ($Code) {
         $svc = Get-McpServiceByCode -Code $Code

@@ -40,6 +40,7 @@
 
 # 仓库根目录定位方式：本文件位于 <仓库根>/scripts/ 下，$PSScriptRoot 即 scripts 目录，
 # 取其上一级即为仓库根。不依赖当前工作目录，任何位置调用均以本文件自身位置反推仓库根。
+# 环境变量 MCP_SUITE_ROOT 可覆盖上述结果（已设置但无效时不回退，见 lib/registry.ps1，T-ENV-01）。
 $script:McpRepoRoot = (Split-Path -Parent $PSScriptRoot)
 
 $script:McpCtlGlobal = @{

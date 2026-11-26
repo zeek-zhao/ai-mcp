@@ -168,6 +168,15 @@ function Get-McpPreflightResult {
     param()
 
     $items = New-Object System.Collections.Generic.List[object]
+
+    # ---- 根路径（环境变量 MCP_SUITE_ROOT 已设置但无效时单独报告，不回退到脚本位置；T-ENV-01） ----
+    $rootIssue = Get-McpRepoRootIssue
+    if ($rootIssue) {
+        $items.Add((New-McpPreflightItem -Category '根路径' -Item '环境变量 MCP_SUITE_ROOT' -Level Fail -Detail $rootIssue -Fix ('改为正确的仓库根目录（绝对路径），或清除该变量后重新预检：{0}（只对之后新开的窗口生效；当前窗口可先执行 Remove-Item Env:\MCP_SUITE_ROOT）' -f (Get-McpRepoRootClearCommand))))
+        return $items
+    }
+    $items.Add((New-McpPreflightItem -Category '根路径' -Item '仓库根目录' -Level Pass -Detail ('{0}：{1}' -f (Get-McpRepoRootSourceText), (Get-McpRepoRoot))))
+
     $root = Get-McpRepoRoot
     $services = @(Get-McpServices)
 
@@ -418,6 +427,12 @@ function Invoke-McpPreflightHeal {
     [CmdletBinding()]
     param([switch]$AutoAllowed)
 
+    $rootIssue = Get-McpRepoRootIssue
+    if ($rootIssue) {
+        Write-Host '根路径无效：请先按“立即预检”的提示处理环境变量 MCP_SUITE_ROOT，再执行环境自愈。'
+        return '已取消'
+    }
+
     $items = Get-McpPreflightResult
     $need = @($items | Where-Object { $_.Failed -and $_.BootstrapFix })
     if ($need.Count -eq 0) {
@@ -459,9 +474,15 @@ function Invoke-McpPreflight {
 
     $items = Get-McpPreflightResult
     Show-McpPreflightResult -Items $items
-    $null = Save-McpPreflightResult -Items $items
     $s = Get-McpPreflightSummary -Items $items
-    Write-McpOpsLog -Action '登录预检' -Service '-' -Detail ('通过 {0} / 未通过 {1} / 提示 {2}' -f $s.Pass, $s.Fail, $s.Info)
+    if (Get-McpRepoRootIssue) {
+        # 根路径无效：日志目录无法定位，本次结果不保存、不写操作日志（修复后重新预检）
+        Write-Host '根路径无效：本次预检结果未保存（修复后重新预检）。'
+    }
+    else {
+        $null = Save-McpPreflightResult -Items $items
+        Write-McpOpsLog -Action '登录预检' -Service '-' -Detail ('通过 {0} / 未通过 {1} / 提示 {2}' -f $s.Pass, $s.Fail, $s.Info)
+    }
 
     $healable = @($items | Where-Object { $_.Failed -and $_.BootstrapFix })
     if ($AllowHeal -and $healable.Count -gt 0) {

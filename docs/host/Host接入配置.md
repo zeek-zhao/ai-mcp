@@ -3,17 +3,36 @@
 | 文档编号 | DOC-HOST-001 |
 |---|---|
 | 文档名称 | Host 接入配置 |
-| 版本 | v0.6.0 |
+| 版本 | v0.7.0 |
 | 状态 | 生效（A） |
 | 密级 | 内部 |
 | 作者 | zeek.zhao |
 | 创建日期 | 2026-11-25 |
 | 最后更新 | 2026-11-26 |
-| 关联里程碑 | M3（导出能力）、M5–M8（回填真实命令）、M10、统一配置改造、Magpie 网关接入 |
+| 关联里程碑 | M3（导出能力）、M5–M8（回填真实命令）、M10、统一配置改造、Magpie 网关接入、环境变量与工作流 |
 | 评审人 | 自审 |
 | 存放路径 | `docs/host/Host接入配置.md` |
 
 > 模型一（ADR-006）：四个服务在 Host 中分别注册为独立 MCP 条目，由 Host 按需 stdio 拉起；mcpctl 菜单 6「导出 Host 配置」可生成本机可用的配置片段（command / args / env 为本机绝对路径，不含明文凭证；统一配置中已禁用的服务不导出）。示例中的路径为示意结构，实际值以本机导出结果为准。配置读取约定见 ADR-007：启动器通过 `env.MCP_SUITE_CONFIG` 找到仓库根统一配置 `mcp.config.json`。
+
+## 0. 路径解析优先级
+
+mcpctl 与四个启动器按同一顺序定位仓库根与统一配置；环境变量缺失时零配置可用：
+
+| 顺序 | 依据 | 结果 |
+|---|---|---|
+| 1 | 环境变量 `MCP_SUITE_CONFIG`（配置文件的绝对路径） | 直接读取该文件；设置后不再看 `MCP_SUITE_ROOT` |
+| 2 | 环境变量 `MCP_SUITE_ROOT`（仓库根目录的绝对路径） | 读取 `<MCP_SUITE_ROOT>\mcp.config.json`；mcpctl 以该目录为仓库根 |
+| 3 | 两者都未设置 | 由脚本自身位置推断：`scripts\` 的上一级目录，配置为 `<仓库根>\mcp.config.json` |
+
+- `MCP_SUITE_ROOT` 的生效条件：必须是绝对路径，且目录下存在 `scripts/mcpctl.config.ps1`；任一条不满足即视为无效。
+- **无效时不回退**：mcpctl（主菜单、Bootstrap、登录预检）与四个启动器用下面两句原文报错，并给出清除命令——
+  - 不是绝对路径：`环境变量 MCP_SUITE_ROOT 必须是仓库根目录的绝对路径，当前为：<值>。请改为正确的仓库根目录，或清除该变量后重试：setx MCP_SUITE_ROOT ""`
+  - 不是本仓库根：`环境变量 MCP_SUITE_ROOT 指向的目录不是本仓库根（缺少 scripts/mcpctl.config.ps1）：<值>。请改为正确的仓库根目录，或清除该变量后重试：setx MCP_SUITE_ROOT ""`
+- 设置方法：`setx MCP_SUITE_ROOT "<仓库根目录>"`。`setx` 只对之后新开的窗口生效；当前窗口可先执行 `set MCP_SUITE_ROOT=<仓库根目录>`（cmd）或 `$env:MCP_SUITE_ROOT = '<仓库根目录>'`（PowerShell）。
+- 生效确认：运行 `scripts/mcpctl.ps1`，横幅会打印一行 `[根路径] 来自环境变量 MCP_SUITE_ROOT` 或 `[根路径] 由脚本位置推断`；Bootstrap 输出同样带这一行；菜单 7 登录预检的「根路径」项写明来源，变量无效时单独报错并给出修复命令。
+- 与 Host 直连的关系：Host 条目仍建议保留 `env.MCP_SUITE_CONFIG`（优先级最高，不依赖进程环境）；`MCP_SUITE_ROOT` 主要用于 mcpctl 自身与不想逐条带 env 的场景。
+- CI 校验：报错文案在 mcpctl 与四个启动器之间保持一致（防手改漂移），并做「未设置 / 设为仓库根 / 设错」三态自检。
 
 ## 1. 接入原则
 
@@ -141,3 +160,4 @@ magpie library mcp agents Gerrit <agent1,agent2,…>
 | v0.4.0 | 2026-11-26 | zeek.zhao | 四条目改为启动器形态（gerrit 改为 venv python + launcher.py）并补充 env.MCP_SUITE_CONFIG；接入原则与注入规则改为统一配置口径；验证清单补充 MCP_SUITE_CONFIG 检查项 | 统一配置改造（ADR-007，T-DOC-01，Issue #57） |
 | v0.5.0 | 2026-11-26 | zeek.zhao | 验证清单「Host 退出后无残留进程」的复核方法更正：总控的遗留进程检测基于 PID 文件，不覆盖 Host 拉起的进程，改为引用端到端验收清单的进程观察命令 | 与实现对齐（T-VER-03，Issue #71） |
 | v0.6.0 | 2026-11-26 | zeek.zhao | 新增第 4 节「Magpie 网关模式（可选）」：四条路由与登记方式、按需行为实测（按服务懒启动、会话结束后空闲约 10 分钟回收）、客户端密钥分组授权建议（尚未创建）、工具命名与回退直连方法 | Magpie 网关接入（TASK-PROXY-01，ADR-008，Issue #85） |
+| v0.7.0 | 2026-11-26 | zeek.zhao | 新增第 0 节「路径解析优先级」：`MCP_SUITE_CONFIG` > `MCP_SUITE_ROOT` > 脚本位置推断；`MCP_SUITE_ROOT` 无效时不回退、两句报错原文与清除命令；设置方法、生效确认与 CI 校验说明 | 环境变量与工作流（T-ENV-01，Issue #89） |
