@@ -10,7 +10,9 @@
          （结论栏 = 标题含「结论」的小节下，表头列名以「结果」或「结论」开头的表格）；
       5. scripts 下全部 .ps1 带 UTF-8 BOM（Windows PowerShell 5.1 才能正确识别中文）；
       6. 问题记录（DOC-OPS-ISSUE-001）的 DEV 编号按出现顺序递增、不重复、不跳号
-         （已停用的编号以「已关闭」条目留档，不留例外清单）。
+         （已停用的编号以「已关闭」条目留档，不留例外清单）；
+      7. 更新记录（DOC-OPS-CHANGE-001）每个条目表都位于自己的版本段标题下，同一版本段不得出现第二个条目表，
+         首个版本段版本 == 头部版本。
     任一项不通过时退出码为 1。本脚本只读，不修改任何文件。
     规则来源：docs\00-文档管理规范.md（第 5、6、7、8 节）。
 .PARAMETER RepoRoot
@@ -163,6 +165,36 @@ function Get-McpLedgerAuditResult {
             Add-Result $contOk $contText
         }
 
+        # 段结构校验（更新记录 DOC-OPS-CHANGE-001，L4 记录类，不走上面的变更记录表比对）：
+        #   每个条目表（表头「条目 | 说明 | 服务/模块 | 关联」）都必须位于自己的版本段标题
+        #   （## vX.Y.Z — 日期）之下，同一版本段不得出现第二个条目表；首个版本段版本 == 头部版本。
+        #   先例 DEV-021：在文首新增版本段时把上一版的段标题覆盖掉，条目表孤立在上一段内，
+        #   段数没有增加却没有被任何检查发现。
+        if ($id -eq 'DOC-OPS-CHANGE-001') {
+            $segments = 0
+            $tables = 0
+            $firstVersion = ''
+            $hasTable = $false
+            $orphans = New-Object System.Collections.Generic.List[int]
+            $lineNo = 0
+            foreach ($line in [regex]::Split($text, '\r?\n')) {
+                $lineNo++
+                if ($line -match '^## (v\d+\.\d+\.\d+)') {
+                    if ($segments -eq 0) { $firstVersion = $Matches[1] }
+                    $segments++
+                    $hasTable = $false
+                    continue
+                }
+                if ($line -match '^\|\s*条目\s*\|\s*说明\s*\|') {
+                    if ($segments -eq 0 -or $hasTable) { $orphans.Add($lineNo) } else { $tables++; $hasTable = $true }
+                }
+            }
+            $none = '无'
+            $orphanText = $none
+            if ($orphans.Count) { $orphanText = '第 ' + ($orphans -join '、') + ' 行' }
+            Add-Result ($segments -ge 1 -and $orphans.Count -eq 0) ('更新记录每个条目表都位于自己的版本段标题下（版本段 {0} 个，含条目表 {1} 个；不属于任何版本段或所在段已有条目表的：{2}）' -f $segments, $tables, $orphanText)
+            Add-Result ($firstVersion -eq $ver) ('更新记录首个版本段版本 {0} == 头部 {1}' -f $firstVersion, $ver)
+        }
         if ($script:McpLedgerRecordIds -contains $id) { continue }
         $idx = $text.IndexOf('## 变更记录', [StringComparison]::Ordinal)
         if ($idx -lt 0) {
