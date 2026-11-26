@@ -5,18 +5,25 @@
 //   node scripts/tests/lib/mcp-stdio-test.mjs [--service <服务Id>] [--structural] [--via gateway]
 //        [--gateway-url <url>] [--gateway-agent <名称>] [--config <统一配置路径>] [--expect-tools <n>]
 //        [--only <服务Id,服务Id…>] [--preflight] [--timeout-ms <毫秒>] [--help]
+//        [--snapshot] [--diff]
+//
+// 工具快照（T-FLOW-02，仅直连模式，需要真实配置）：
+//   --snapshot  把 tools/list 写入 scripts/tests/tools-snapshot/<服务Id>.json（工具名、说明哈希、必填字段、参数名）
+//   --diff      与已入库的快照比较，输出「新增 / 删除 / 签名变化」三类清单；无变化退出码 0，有变化退出码 1
 //
 // 退出码（四态）：
 //   0 = PASS     所选服务全部通过（SKIP 不计失败）
-//   1 = FAIL     至少一项断言失败（结构不一致、工具数不符、只读调用失败）
-//   2 = BLOCKED  环境或前置不满足（找不到 node、依赖未安装、统一配置缺失或未就绪、启动器无法拉起、网关不可达）
+//   1 = FAIL     至少一项断言失败（结构不一致、工具数不符、只读调用失败、--diff 发现工具差异）
+//   2 = BLOCKED  环境或前置不满足（找不到 node、依赖未安装、统一配置缺失或未就绪、启动器无法拉起、网关不可达、没有快照文件）
 //   3 = USAGE    参数错误（发现即返回，不再执行）
 // 多个服务同时运行时取最严重的结果：FAIL > BLOCKED > PASS。
 //
 // 安全：只打印工具名、条数、耗时与成败，不打印统一配置的任何取值；错误文本经 sanitize() 去掉地址与长随机串。
+// 快照文件只含工具名、说明哈希与字段名，不含凭证与实例信息。
 
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,6 +36,8 @@ const SCHEMA_FILE = "mcp.config.schema.json";
 const REGISTRY_FILE = path.join("scripts", "mcpctl.config.ps1");
 const GATEWAY_ROUTES_FILE = path.join("scripts", "lib", "gateway-routes.ps1");
 const GATEWAY_SAMPLE_FILE = "gateway.routes.sample.json";
+const SNAPSHOT_DIR = path.join(TESTS_DIR, "tools-snapshot");
+const DIFF_SUMMARY_KEYWORD = "工具快照差异";
 const CONFIG_ENV_NAME = "MCP_SUITE_CONFIG";
 const ROOT_ENV_NAME = "MCP_SUITE_ROOT";
 const EXIT = { PASS: 0, FAIL: 1, BLOCKED: 2, USAGE: 3 };
@@ -38,7 +47,7 @@ const IS_WIN = process.platform === "win32";
 
 // ---------- 参数 ----------
 function parseArgs(argv) {
-  const out = { service: null, structural: false, via: null, gatewayUrl: null, gatewayAgent: "dsh", config: null, expectTools: null, only: null, preflight: false, help: false, timeoutMs: 60000 };
+  const out = { service: null, structural: false, via: null, gatewayUrl: null, gatewayAgent: "dsh", config: null, expectTools: null, only: null, preflight: false, snapshot: false, diff: false, help: false, timeoutMs: 60000 };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => { if (i + 1 >= argv.length) { throw new Error(`选项 ${a} 缺少取值`); } return argv[++i]; };
@@ -51,6 +60,8 @@ function parseArgs(argv) {
     else if (a === "--expect-tools") { out.expectTools = Number(next()); }
     else if (a === "--only") { out.only = String(next()).split(",").map((s) => s.trim()).filter(Boolean); }
     else if (a === "--preflight") { out.preflight = true; }
+    else if (a === "--snapshot") { out.snapshot = true; }
+    else if (a === "--diff") { out.diff = true; }
     else if (a === "--timeout-ms") { out.timeoutMs = Number(next()); }
     else if (a === "--help" || a === "-h") { out.help = true; }
     else { throw new Error(`未知参数：${a}`); }
@@ -58,13 +69,17 @@ function parseArgs(argv) {
   if (out.via !== null && out.via !== "gateway") { throw new Error("--via 只支持 gateway"); }
   if (out.expectTools !== null && (!Number.isInteger(out.expectTools) || out.expectTools < 0)) { throw new Error("--expect-tools 须为非负整数"); }
   if (!Number.isInteger(out.timeoutMs) || out.timeoutMs <= 0) { throw new Error("--timeout-ms 须为正整数"); }
+  if (out.snapshot && out.diff) { throw new Error("--snapshot 与 --diff 不能同时使用"); }
+  if ((out.snapshot || out.diff) && (out.structural || out.via !== null || out.preflight)) {
+    throw new Error("--snapshot / --diff 只支持直连模式，不能与 --structural、--via gateway、--preflight 同时使用");
+  }
   return out;
 }
 
 function usage(message) {
   if (message) { console.log(`参数错误：${message}`); }
-  console.log("用法：node scripts/tests/lib/mcp-stdio-test.mjs [--service <服务Id>] [--structural] [--via gateway] [--gateway-url <url>] [--gateway-agent <名称>] [--config <统一配置路径>] [--expect-tools <n>] [--only <服务Id,…>] [--preflight] [--timeout-ms <毫秒>] [--help]");
-  console.log("退出码：0 通过；1 失败；2 环境或前置不满足；3 参数错误。");
+  console.log("用法：node scripts/tests/lib/mcp-stdio-test.mjs [--service <服务Id>] [--structural] [--via gateway] [--gateway-url <url>] [--gateway-agent <名称>] [--config <统一配置路径>] [--expect-tools <n>] [--only <服务Id,…>] [--preflight] [--snapshot] [--diff] [--timeout-ms <毫秒>] [--help]");
+  console.log("退出码：0 通过；1 失败（含 --diff 发现工具差异）；2 环境或前置不满足；3 参数错误。");
   return EXIT.USAGE;
 }
 
@@ -86,6 +101,71 @@ function isFilled(value) { const s = String(value ?? "").trim(); return s.length
 function hasSeparator(item) { return /[\\/]/.test(item) || path.isAbsolute(item); }
 function validRoot(dir) { try { return typeof dir === "string" && dir.length > 0 && existsSync(path.join(dir, "scripts", "mcpctl.config.ps1")); } catch { return false; } }
 function readJson(file) { return JSON.parse(readFileSync(file, "utf8").replace(/^\uFEFF/, "")); }
+
+// ---------- 工具快照（T-FLOW-02） ----------
+function sha256(text) { return createHash("sha256").update(String(text ?? ""), "utf8").digest("hex").slice(0, 16); }
+// 每个工具只保留：名称、说明哈希、必填字段、参数名（不含说明原文、默认值、枚举，更不含凭证或实例信息）
+function digestTool(tool) {
+  const schema = tool?.inputSchema && typeof tool.inputSchema === "object" ? tool.inputSchema : {};
+  const required = Array.isArray(schema.required) ? schema.required.map(String) : [];
+  const properties = schema.properties && typeof schema.properties === "object" ? Object.keys(schema.properties) : [];
+  return { name: String(tool?.name ?? ""), descriptionHash: sha256(tool?.description ?? ""), required: [...new Set(required)].sort(), properties: [...new Set(properties)].sort() };
+}
+function snapshotPath(caseDef) { return path.join(SNAPSHOT_DIR, `${caseDef.id}.json`); }
+function readSnapshot(caseDef) {
+  const file = snapshotPath(caseDef);
+  const label = `scripts/tests/tools-snapshot/${caseDef.id}.json`;
+  if (!existsSync(file)) { return { problem: `没有快照文件 ${label}（先运行 scripts\\tests\\run-tests.bat --snapshot）` }; }
+  let doc;
+  try { doc = readJson(file); } catch (e) { return { problem: `快照文件 ${label} 不是合法 JSON：${sanitize(e.message)}` }; }
+  if (!doc || !Array.isArray(doc.tools) || doc.tools.some((t) => !t || typeof t.name !== "string" || typeof t.descriptionHash !== "string")) {
+    return { problem: `快照文件 ${label} 格式不正确（需要 tools 数组，每项含 name 与 descriptionHash）` };
+  }
+  return { doc };
+}
+function writeSnapshot(caseDef, digests) {
+  const tools = [...digests].sort((a, b) => a.name.localeCompare(b.name, "en"));
+  const doc = {
+    _comment: "工具快照（T-FLOW-02）：只含工具名、说明哈希与字段名，不含凭证与实例信息。由 scripts/tests/run-tests.bat --snapshot 生成，请勿手工编辑。",
+    service: caseDef.id,
+    capturedAt: new Date().toISOString().slice(0, 10),
+    toolCount: tools.length,
+    tools,
+  };
+  mkdirSync(SNAPSHOT_DIR, { recursive: true });
+  writeFileSync(snapshotPath(caseDef), `${JSON.stringify(doc, null, 2)}\n`, "utf8");
+  return doc;
+}
+// 比较「新增 / 删除 / 签名变化」；签名 = 必填字段 + 参数名 + 说明哈希
+function diffSnapshot(doc, digests) {
+  const before = new Map(doc.tools.map((t) => [t.name, t]));
+  const after = new Map(digests.map((t) => [t.name, t]));
+  const added = digests.filter((t) => !before.has(t.name)).map((t) => t.name);
+  const removed = doc.tools.filter((t) => !after.has(t.name)).map((t) => t.name);
+  const changed = [];
+  for (const t of digests) {
+    const old = before.get(t.name);
+    if (!old) { continue; }
+    const notes = [];
+    const oldRequired = Array.isArray(old.required) ? old.required : [];
+    const oldProps = Array.isArray(old.properties) ? old.properties : [];
+    const reqAdded = t.required.filter((x) => !oldRequired.includes(x));
+    const reqRemoved = oldRequired.filter((x) => !t.required.includes(x));
+    if (reqAdded.length || reqRemoved.length) {
+      const delta = [...reqAdded.map((x) => `新增 ${x}`), ...reqRemoved.map((x) => `删除 ${x}`)].join("、");
+      notes.push(`必填字段 快照 [${oldRequired.join(", ")}] → 当前 [${t.required.join(", ")}]（${delta}）`);
+    }
+    const propAdded = t.properties.filter((x) => !oldProps.includes(x));
+    const propRemoved = oldProps.filter((x) => !t.properties.includes(x));
+    if (propAdded.length || propRemoved.length) {
+      const delta = [...propAdded.map((x) => `新增 ${x}`), ...propRemoved.map((x) => `删除 ${x}`)].join("、");
+      notes.push(`参数 快照 ${oldProps.length} 个 → 当前 ${t.properties.length} 个（${delta}）`);
+    }
+    if (old.descriptionHash !== t.descriptionHash) { notes.push("说明已变化"); }
+    if (notes.length) { changed.push({ name: t.name, notes }); }
+  }
+  return { added, removed, changed };
+}
 function commandAvailable(name) {
   const probe = IS_WIN ? spawnSync("where", [name], { windowsHide: true }) : spawnSync("which", [name]);
   return probe.status === 0;
@@ -150,7 +230,8 @@ function readRequiredFields(schema) {
 }
 
 // ---------- 结构校验（无需凭证与依赖，CI 必跑） ----------
-function staticChecks(ctx) {
+// snapshotMode = 正在写入快照（--snapshot）：此时不校验快照是否存在、是否与期望数一致（否则无法生成第一份快照）
+function staticChecks(ctx, snapshotMode = false) {
   const problems = [];
   if (ctx.registry.size === 0) { problems.push("注册表解析不到任何服务（scripts/mcpctl.config.ps1 的 Id / StartCommand / ConfigKey / Stack 写法可能已变）"); }
   const caseIds = ctx.cases.map((c) => c.id);
@@ -170,6 +251,23 @@ function staticChecks(ctx) {
     const launcher = hasSeparator(reg.startCommand[1]) ? path.resolve(ctx.root, reg.startCommand[1]) : null;
     if (!launcher || !existsSync(launcher)) { problems.push(`注册表服务 ${c.id} 的启动器不存在：${reg.startCommand[1]}`); }
     if (!(reg.configKey in (ctx.sample?.services ?? {}))) { problems.push(`模板 ${SAMPLE_FILE} 中没有配置段 services.${reg.configKey}`); }
+  }
+  // 工具快照（T-FLOW-02）：每个用例必须有快照，且工具数与期望一致（期望数改了而快照没更新 = 升级流程第 4、5 步没走完）
+  if (!snapshotMode) {
+    for (const f of (existsSync(SNAPSHOT_DIR) ? readdirSync(SNAPSHOT_DIR) : [])) {
+      if (f.endsWith(".json") && !caseIds.includes(f.slice(0, -5))) { problems.push(`快照 scripts/tests/tools-snapshot/${f} 没有对应用例`); }
+    }
+    for (const c of ctx.cases) {
+      const snap = readSnapshot(c);
+      if (snap.problem) { problems.push(`用例 ${c.id} ${snap.problem}`); continue; }
+      const names = snap.doc.tools.map((t) => t.name);
+      const dupNames = names.filter((n, i) => names.indexOf(n) !== i);
+      if (dupNames.length) { problems.push(`用例 ${c.id} 的快照有重复工具名：${[...new Set(dupNames)].join("、")}`); }
+      if (snap.doc.toolCount !== names.length) { problems.push(`用例 ${c.id} 的快照 toolCount（${snap.doc.toolCount}）与 tools 条数（${names.length}）不一致`); }
+      if (names.length !== c.expectedTools) {
+        problems.push(`用例 ${c.id} 的快照工具数（${names.length}）与 expectedTools（${c.expectedTools}）不一致：升级后先运行 run-tests.bat --diff 评估差异，再用 run-tests.bat --snapshot 更新快照`);
+      }
+    }
   }
   return problems;
 }
@@ -260,16 +358,16 @@ function startLauncher(ctx, reg, configPath, structural) {
   return { client, child, fallback: Boolean(resolved.fallback), interpreter: resolved.command };
 }
 
-async function listTools(client, timeoutMs) {
-  const names = [];
+async function listToolDefs(client, timeoutMs) {
+  const tools = [];
   let cursor;
   for (let page = 0; page < 20; page++) {
     const result = await client.request("tools/list", cursor ? { cursor } : {}, timeoutMs);
-    for (const t of result?.tools ?? []) { names.push(t.name); }
+    for (const t of result?.tools ?? []) { tools.push(t); }
     cursor = result?.nextCursor;
     if (!cursor) { break; }
   }
-  return names;
+  return tools;
 }
 
 // ---------- 直连模式 ----------
@@ -312,9 +410,30 @@ async function runDirect(ctx, caseDef, opts) {
     const init = await client.request("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "ai-mcp-selftest", version: "1.0.0" } }, opts.timeoutMs);
     client.notify("notifications/initialized", {});
     details.push(`握手成功（${((Date.now() - t0) / 1000).toFixed(1)} 秒，serverInfo=${sanitize(init?.serverInfo?.name ?? "")}）`);
-    const names = await listTools(client, opts.timeoutMs);
+    const toolDefs = await listToolDefs(client, opts.timeoutMs);
+    const names = toolDefs.map((t) => t.name);
+    if (opts.snapshot) {
+      // 快照模式：总是写入当前工具集；与期望数不符时提示更新用例
+      const doc = writeSnapshot(caseDef, toolDefs.map(digestTool));
+      details.push(`已写入快照 scripts/tests/tools-snapshot/${caseDef.id}.json（${doc.toolCount} 个工具）`);
+      if (names.length !== expected) { return { status: "FAIL", reason: `工具数 ${names.length}，期望 ${expected}（快照已写入，请同步更新 scripts/tests/cases/services.json 的 expectedTools）`, details }; }
+      return { status: "PASS", reason: "", details };
+    }
     if (names.length !== expected) { return { status: "FAIL", reason: `工具数 ${names.length}，期望 ${expected}`, details }; }
     details.push(`工具数 ${names.length}（期望 ${expected}）`);
+    if (opts.diff) {
+      // 对比模式：与入库快照比较，输出「新增 / 删除 / 签名变化」；有差异即 FAIL（退出码 1）
+      const snap = readSnapshot(caseDef);
+      if (snap.problem) { return { status: "BLOCKED", reason: snap.problem, details }; }
+      const d = diffSnapshot(snap.doc, toolDefs.map(digestTool));
+      details.push(`${DIFF_SUMMARY_KEYWORD}（${caseDef.id}）：新增 ${d.added.length} / 删除 ${d.removed.length} / 签名变化 ${d.changed.length}`);
+      if (d.added.length) { details.push(`  新增：${d.added.join("、")}`); }
+      if (d.removed.length) { details.push(`  删除：${d.removed.join("、")}`); }
+      for (const ch of d.changed) { details.push(`  签名变化：${ch.name}（${ch.notes.join("；")}）`); }
+      if (d.added.length || d.removed.length || d.changed.length) { return { status: "FAIL", reason: "工具集与快照不一致（见上方差异清单）", details }; }
+      details.push("与快照一致");
+      return { status: "PASS", reason: "", details };
+    }
     const call = caseDef.readOnlyCall;
     if (!names.includes(call.tool)) { return { status: "FAIL", reason: `用例的只读调用工具不存在：${call.tool}`, details }; }
     const t1 = Date.now();
@@ -462,7 +581,7 @@ async function main() {
     return EXIT.FAIL;
   }
   if (!Array.isArray(ctx.cases) || ctx.cases.length === 0) { console.log("结构校验失败：scripts/tests/cases/services.json 没有 services 数组"); return EXIT.FAIL; }
-  const problems = staticChecks(ctx);
+  const problems = staticChecks(ctx, opts.snapshot);
   for (const p of problems) { console.log(`结构校验失败：${p}`); }
   if (problems.length > 0) { return EXIT.FAIL; }
   console.log(`结构校验通过：用例 ${ctx.cases.length} 条与注册表、模板、网关样例、启动器文件一致`);
@@ -481,7 +600,9 @@ async function main() {
   if (opts.service && opts.only && selected.length === 0) { console.log(`[${opts.service}] 未被 --only 选中，跳过`); return EXIT.PASS; }
   if (opts.preflight) { return preflight(ctx, selected, opts); }
 
-  const mode = opts.structural ? "结构模式（模板配置）" : opts.via === "gateway" ? `网关模式（${sanitize(gatewayUrl(opts))}）` : "直连模式";
+  const mode = opts.snapshot ? "快照模式（写入 scripts/tests/tools-snapshot，需要真实配置）"
+    : opts.diff ? "对比模式（与 scripts/tests/tools-snapshot 比较，需要真实配置；有差异退出码 1）"
+    : opts.structural ? "结构模式（模板配置）" : opts.via === "gateway" ? `网关模式（${sanitize(gatewayUrl(opts))}）` : "直连模式";
   console.log(`模式：${mode}`);
   const tally = { PASS: 0, FAIL: 0, SKIP: 0, BLOCKED: 0 };
   for (const caseDef of selected) {

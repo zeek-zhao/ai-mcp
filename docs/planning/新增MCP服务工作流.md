@@ -3,7 +3,7 @@
 | 文档编号 | DOC-PLAN-003 |
 |---|---|
 | 文档名称 | 新增 MCP 服务工作流 |
-| 版本 | v1.0.0 |
+| 版本 | v1.1.0 |
 | 状态 | 生效（A） |
 | 密级 | 内部 |
 | 作者 | zeek.zhao |
@@ -133,8 +133,9 @@
 - **操作**：
   1. 复制 `scripts/tests/test-gerrit.bat` 为 `scripts/tests/test-<配置段>.bat`，把 `--service` 改为新服务 Id。`scripts/tests/run-tests.bat` 按用例文件逐个调用 `test-<配置段>.bat`，总入口不需要修改。
   2. `scripts/tests/cases/services.json` 的 `services` 中新增一条：`id`、`configKey`、`gatewayName`（与第 7 步一致）、`expectedTools`（实测值）、`readOnlyCall`（工具名与参数）。
-- **完成判据**：`scripts\tests\run-tests.bat --service <Id>` 退出码 0；`scripts\tests\run-tests.bat --structural` 退出码 0（用例与注册表、模板、网关样例、启动器文件一致）。
-- **涉及文件**：`scripts/tests/test-<配置段>.bat`、`scripts/tests/cases/services.json`；格式见 `docs/services/自检脚本说明.md`。
+  3. 用真实配置生成第一份工具快照：`scripts\tests\run-tests.bat --service <Id> --snapshot`，得到 `scripts/tests/tools-snapshot/<Id>.json` 并随 PR 提交（快照不含凭证与实例信息）。
+- **完成判据**：`scripts\tests\run-tests.bat --service <Id>` 退出码 0；`scripts\tests\run-tests.bat --structural` 退出码 0（用例与注册表、模板、网关样例、启动器文件一致，快照工具数与 `expectedTools` 一致）；`scripts\tests\run-tests.bat --service <Id> --diff` 退出码 0。
+- **涉及文件**：`scripts/tests/test-<配置段>.bat`、`scripts/tests/cases/services.json`、`scripts/tests/tools-snapshot/<Id>.json`；格式见 `docs/services/自检脚本说明.md`。
 
 ### 第 9 步：文档与台账
 
@@ -168,7 +169,7 @@ CI 步骤「新增服务一致性检查」以注册表为准，逐条服务核�
 | 5 | 模板 `services` 有该配置段；Schema 两处落点齐全；配置字段说明有该服务的字段行 |
 | 6 | 向导字段目录有该配置段 |
 | 7 | `McpGatewayNames` 与网关样例 `mcpServers` 有该服务 |
-| 8 | `scripts/tests/test-<配置段>.bat` 存在；用例的 id、configKey、gatewayName 一致 |
+| 8 | `scripts/tests/test-<配置段>.bat` 存在；用例的 id、configKey、gatewayName 一致（工具快照是否存在、快照工具数与 `expectedTools` 是否一致，由 CI「自检脚本结构模式」校验） |
 | 9 | 服务接入说明有 `## <序号>. <Id>` 小节 |
 
 ## 变更记录
@@ -176,3 +177,4 @@ CI 步骤「新增服务一致性检查」以注册表为准，逐条服务核�
 | 版本 | 日期 | 变更人 | 变更摘要 | 原因/关联条目 |
 |---|---|---|---|---|
 | v1.0.0 | 2026-11-26 | zeek.zhao | 首次建立新增 MCP 服务工作流：10 步（目的、操作、完成判据、涉及文件）、一致性检查覆盖范围 | 新增服务工作流（T-FLOW-01，Issue #95 / PR #96） |
+| v1.1.0 | 2026-11-26 | zeek.zhao | 第 8 步增加生成第一份工具快照（`--snapshot`）与无差异判据（`--diff`）；覆盖范围表第 8 步注明快照校验所在步骤 | 升级 MCP 服务工作流（T-FLOW-02，Issue #97 / PR __PR__） |

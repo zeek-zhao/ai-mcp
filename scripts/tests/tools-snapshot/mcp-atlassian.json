@@ -1,0 +1,1249 @@
+{
+  "_comment": "工具快照（T-FLOW-02）：只含工具名、说明哈希与字段名，不含凭证与实例信息。由 scripts/tests/run-tests.bat --snapshot 生成，请勿手工编辑。",
+  "service": "mcp-atlassian",
+  "capturedAt": "2026-11-26",
+  "toolCount": 98,
+  "tools": [
+    {
+      "name": "confluence_add_comment",
+      "descriptionHash": "26530cb75d3ef081",
+      "required": [
+        "body",
+        "page_id"
+      ],
+      "properties": [
+        "body",
+        "page_id"
+      ]
+    },
+    {
+      "name": "confluence_add_inline_comment",
+      "descriptionHash": "1d32ee14b569e23e",
+      "required": [
+        "body",
+        "page_id",
+        "text_selection"
+      ],
+      "properties": [
+        "body",
+        "page_id",
+        "text_selection",
+        "text_selection_match_count",
+        "text_selection_match_index"
+      ]
+    },
+    {
+      "name": "confluence_add_label",
+      "descriptionHash": "c9dee8738b4c93e0",
+      "required": [
+        "name",
+        "page_id"
+      ],
+      "properties": [
+        "name",
+        "page_id"
+      ]
+    },
+    {
+      "name": "confluence_check_content_permissions",
+      "descriptionHash": "1adbdaf8701f98cd",
+      "required": [
+        "content_id",
+        "operation",
+        "user_identifier"
+      ],
+      "properties": [
+        "content_id",
+        "operation",
+        "subject_type",
+        "user_identifier"
+      ]
+    },
+    {
+      "name": "confluence_copy_page",
+      "descriptionHash": "159fca75d0f93e88",
+      "required": [
+        "destination_space_key",
+        "new_title",
+        "source_page_id"
+      ],
+      "properties": [
+        "copy_attachments",
+        "destination_parent_id",
+        "destination_space_key",
+        "new_title",
+        "source_page_id"
+      ]
+    },
+    {
+      "name": "confluence_create_page",
+      "descriptionHash": "d056362dd50bd237",
+      "required": [
+        "space_key",
+        "title"
+      ],
+      "properties": [
+        "content",
+        "content_file",
+        "content_format",
+        "emoji",
+        "enable_heading_anchors",
+        "include_content",
+        "page_width",
+        "parent_id",
+        "space_key",
+        "subtype",
+        "table_layout",
+        "title"
+      ]
+    },
+    {
+      "name": "confluence_create_page_from_template",
+      "descriptionHash": "ecfdb0ba556fe6a6",
+      "required": [
+        "space_key",
+        "template_id",
+        "title"
+      ],
+      "properties": [
+        "parent_id",
+        "space_key",
+        "template_id",
+        "title"
+      ]
+    },
+    {
+      "name": "confluence_delete_attachment",
+      "descriptionHash": "cc0211d3039e5149",
+      "required": [
+        "attachment_id"
+      ],
+      "properties": [
+        "attachment_id"
+      ]
+    },
+    {
+      "name": "confluence_delete_page",
+      "descriptionHash": "4a2550cc5690a729",
+      "required": [
+        "page_id"
+      ],
+      "properties": [
+        "page_id"
+      ]
+    },
+    {
+      "name": "confluence_download_attachment",
+      "descriptionHash": "4dc83948d5dbbdc1",
+      "required": [
+        "attachment_id"
+      ],
+      "properties": [
+        "attachment_id"
+      ]
+    },
+    {
+      "name": "confluence_download_content_attachments",
+      "descriptionHash": "8188fcade771f32a",
+      "required": [
+        "content_id"
+      ],
+      "properties": [
+        "content_id"
+      ]
+    },
+    {
+      "name": "confluence_get_attachments",
+      "descriptionHash": "7325f710c984aaf9",
+      "required": [
+        "content_id"
+      ],
+      "properties": [
+        "content_id",
+        "filename",
+        "limit",
+        "media_type",
+        "start"
+      ]
+    },
+    {
+      "name": "confluence_get_comments",
+      "descriptionHash": "bc7bf957f1897730",
+      "required": [
+        "page_id"
+      ],
+      "properties": [
+        "page_id"
+      ]
+    },
+    {
+      "name": "confluence_get_inline_comments",
+      "descriptionHash": "a50831e3fe963c0a",
+      "required": [
+        "page_id"
+      ],
+      "properties": [
+        "page_id"
+      ]
+    },
+    {
+      "name": "confluence_get_labels",
+      "descriptionHash": "0a835d3c6c9b8e59",
+      "required": [
+        "page_id"
+      ],
+      "properties": [
+        "page_id"
+      ]
+    },
+    {
+      "name": "confluence_get_page",
+      "descriptionHash": "edad4f3f9a5534b0",
+      "required": [],
+      "properties": [
+        "convert_to_markdown",
+        "include_metadata",
+        "page_id",
+        "space_key",
+        "title"
+      ]
+    },
+    {
+      "name": "confluence_get_page_children",
+      "descriptionHash": "5987a8b1b1a2c42c",
+      "required": [
+        "parent_id"
+      ],
+      "properties": [
+        "convert_to_markdown",
+        "expand",
+        "include_content",
+        "include_folders",
+        "limit",
+        "parent_id",
+        "start"
+      ]
+    },
+    {
+      "name": "confluence_get_page_diff",
+      "descriptionHash": "91057cdd6d2e8f88",
+      "required": [
+        "from_version",
+        "page_id",
+        "to_version"
+      ],
+      "properties": [
+        "from_version",
+        "page_id",
+        "to_version"
+      ]
+    },
+    {
+      "name": "confluence_get_page_history",
+      "descriptionHash": "5d7e02739a1ea5d6",
+      "required": [
+        "page_id",
+        "version"
+      ],
+      "properties": [
+        "convert_to_markdown",
+        "page_id",
+        "version"
+      ]
+    },
+    {
+      "name": "confluence_get_page_images",
+      "descriptionHash": "77e89e00456fbdc6",
+      "required": [
+        "content_id"
+      ],
+      "properties": [
+        "content_id"
+      ]
+    },
+    {
+      "name": "confluence_get_page_restrictions",
+      "descriptionHash": "e1c846dc7b6500ec",
+      "required": [
+        "page_id"
+      ],
+      "properties": [
+        "page_id"
+      ]
+    },
+    {
+      "name": "confluence_get_page_template",
+      "descriptionHash": "4977fbe1874edfa1",
+      "required": [
+        "template_id"
+      ],
+      "properties": [
+        "template_id"
+      ]
+    },
+    {
+      "name": "confluence_get_page_views",
+      "descriptionHash": "9515d1797fd614ad",
+      "required": [
+        "page_id"
+      ],
+      "properties": [
+        "include_title",
+        "page_id"
+      ]
+    },
+    {
+      "name": "confluence_get_space_page_tree",
+      "descriptionHash": "7c55f34282aa1d79",
+      "required": [
+        "space_key"
+      ],
+      "properties": [
+        "limit",
+        "space_key"
+      ]
+    },
+    {
+      "name": "confluence_get_space_permissions",
+      "descriptionHash": "dfc69c4d7dbf89e0",
+      "required": [
+        "space_id"
+      ],
+      "properties": [
+        "cursor",
+        "limit",
+        "space_id"
+      ]
+    },
+    {
+      "name": "confluence_list_page_templates",
+      "descriptionHash": "a26e37522ef44142",
+      "required": [],
+      "properties": [
+        "limit",
+        "space_key"
+      ]
+    },
+    {
+      "name": "confluence_move_page",
+      "descriptionHash": "3c51bf89e2640dcf",
+      "required": [
+        "page_id"
+      ],
+      "properties": [
+        "page_id",
+        "position",
+        "target_parent_id",
+        "target_space_key"
+      ]
+    },
+    {
+      "name": "confluence_reply_to_comment",
+      "descriptionHash": "f26d4e0c648659cf",
+      "required": [
+        "body",
+        "comment_id"
+      ],
+      "properties": [
+        "body",
+        "comment_id"
+      ]
+    },
+    {
+      "name": "confluence_search",
+      "descriptionHash": "11510a4dcdd7c032",
+      "required": [
+        "query"
+      ],
+      "properties": [
+        "limit",
+        "query",
+        "spaces_filter"
+      ]
+    },
+    {
+      "name": "confluence_search_user",
+      "descriptionHash": "06a4f35ae2256455",
+      "required": [
+        "query"
+      ],
+      "properties": [
+        "group_name",
+        "limit",
+        "query"
+      ]
+    },
+    {
+      "name": "confluence_set_page_restrictions",
+      "descriptionHash": "668ecf3d5678939b",
+      "required": [
+        "page_id"
+      ],
+      "properties": [
+        "edit_groups",
+        "edit_users",
+        "page_id",
+        "read_groups",
+        "read_users"
+      ]
+    },
+    {
+      "name": "confluence_update_page",
+      "descriptionHash": "ad59b9f944158c50",
+      "required": [
+        "page_id",
+        "title"
+      ],
+      "properties": [
+        "content",
+        "content_file",
+        "content_format",
+        "emoji",
+        "enable_heading_anchors",
+        "include_content",
+        "is_minor_edit",
+        "page_id",
+        "page_width",
+        "parent_id",
+        "table_layout",
+        "title",
+        "version_comment"
+      ]
+    },
+    {
+      "name": "confluence_update_page_section",
+      "descriptionHash": "eb08eb029c1bde00",
+      "required": [
+        "heading_text",
+        "new_content",
+        "page_id"
+      ],
+      "properties": [
+        "content_format",
+        "heading_text",
+        "is_minor_edit",
+        "new_content",
+        "page_id",
+        "version_comment"
+      ]
+    },
+    {
+      "name": "confluence_upload_attachment",
+      "descriptionHash": "be931be41a7933e4",
+      "required": [
+        "content_id"
+      ],
+      "properties": [
+        "comment",
+        "content_base64",
+        "content_id",
+        "file_path",
+        "filename",
+        "minor_edit"
+      ]
+    },
+    {
+      "name": "confluence_upload_attachments",
+      "descriptionHash": "324dc3ad12db360a",
+      "required": [
+        "content_id",
+        "file_paths"
+      ],
+      "properties": [
+        "comment",
+        "content_id",
+        "file_paths",
+        "minor_edit"
+      ]
+    },
+    {
+      "name": "jira_add_comment",
+      "descriptionHash": "e1441bb752744e6c",
+      "required": [
+        "body",
+        "issue_key"
+      ],
+      "properties": [
+        "body",
+        "issue_key",
+        "public",
+        "visibility"
+      ]
+    },
+    {
+      "name": "jira_add_issues_to_sprint",
+      "descriptionHash": "cdc58b72493112fd",
+      "required": [
+        "issue_keys",
+        "sprint_id"
+      ],
+      "properties": [
+        "issue_keys",
+        "sprint_id"
+      ]
+    },
+    {
+      "name": "jira_add_watcher",
+      "descriptionHash": "161f0d963db21e08",
+      "required": [
+        "issue_key",
+        "user_identifier"
+      ],
+      "properties": [
+        "issue_key",
+        "user_identifier"
+      ]
+    },
+    {
+      "name": "jira_add_worklog",
+      "descriptionHash": "4c94751647c8b5fa",
+      "required": [
+        "issue_key",
+        "time_spent"
+      ],
+      "properties": [
+        "comment",
+        "issue_key",
+        "original_estimate",
+        "remaining_estimate",
+        "started",
+        "time_spent"
+      ]
+    },
+    {
+      "name": "jira_assign_issue",
+      "descriptionHash": "4f34974c23b6f988",
+      "required": [
+        "issue_key"
+      ],
+      "properties": [
+        "assignee",
+        "issue_key"
+      ]
+    },
+    {
+      "name": "jira_batch_create_issues",
+      "descriptionHash": "77ed6822279ebd67",
+      "required": [
+        "issues"
+      ],
+      "properties": [
+        "issues",
+        "validate_only"
+      ]
+    },
+    {
+      "name": "jira_batch_create_versions",
+      "descriptionHash": "e33307b2e0fda765",
+      "required": [
+        "project_key",
+        "versions"
+      ],
+      "properties": [
+        "project_key",
+        "versions"
+      ]
+    },
+    {
+      "name": "jira_batch_get_changelogs",
+      "descriptionHash": "19142647dc2bd1a9",
+      "required": [
+        "issue_ids_or_keys"
+      ],
+      "properties": [
+        "fields",
+        "issue_ids_or_keys",
+        "limit"
+      ]
+    },
+    {
+      "name": "jira_create_customer_request",
+      "descriptionHash": "109d0c8147a0eb48",
+      "required": [
+        "request_field_values",
+        "request_type_id",
+        "service_desk_id"
+      ],
+      "properties": [
+        "attachments",
+        "raise_on_behalf_of",
+        "request_field_values",
+        "request_participants",
+        "request_type_id",
+        "service_desk_id",
+        "strict_on_behalf"
+      ]
+    },
+    {
+      "name": "jira_create_issue",
+      "descriptionHash": "69a4f3b229b5c257",
+      "required": [
+        "issue_type",
+        "project_key",
+        "summary"
+      ],
+      "properties": [
+        "additional_fields",
+        "assignee",
+        "components",
+        "description",
+        "issue_type",
+        "project_key",
+        "summary"
+      ]
+    },
+    {
+      "name": "jira_create_issue_link",
+      "descriptionHash": "84790c1e9aa9d9cf",
+      "required": [
+        "inward_issue_key",
+        "link_type",
+        "outward_issue_key"
+      ],
+      "properties": [
+        "comment",
+        "comment_visibility",
+        "inward_issue_key",
+        "link_type",
+        "outward_issue_key"
+      ]
+    },
+    {
+      "name": "jira_create_remote_issue_link",
+      "descriptionHash": "78f6bcb595a487b8",
+      "required": [
+        "issue_key",
+        "title",
+        "url"
+      ],
+      "properties": [
+        "icon_url",
+        "issue_key",
+        "relationship",
+        "summary",
+        "title",
+        "url"
+      ]
+    },
+    {
+      "name": "jira_create_sprint",
+      "descriptionHash": "734157ff02db2f33",
+      "required": [
+        "board_id",
+        "end_date",
+        "name",
+        "start_date"
+      ],
+      "properties": [
+        "board_id",
+        "end_date",
+        "goal",
+        "name",
+        "start_date"
+      ]
+    },
+    {
+      "name": "jira_create_version",
+      "descriptionHash": "2d263d909e631809",
+      "required": [
+        "name",
+        "project_key"
+      ],
+      "properties": [
+        "description",
+        "name",
+        "project_key",
+        "release_date",
+        "start_date"
+      ]
+    },
+    {
+      "name": "jira_delete_issue",
+      "descriptionHash": "46e65b838f0c54f7",
+      "required": [
+        "issue_key"
+      ],
+      "properties": [
+        "issue_key"
+      ]
+    },
+    {
+      "name": "jira_download_attachments",
+      "descriptionHash": "0eae43ceb820a198",
+      "required": [
+        "issue_key"
+      ],
+      "properties": [
+        "issue_key"
+      ]
+    },
+    {
+      "name": "jira_edit_comment",
+      "descriptionHash": "67642a2dc13d5db9",
+      "required": [
+        "body",
+        "comment_id",
+        "issue_key"
+      ],
+      "properties": [
+        "body",
+        "comment_id",
+        "issue_key",
+        "visibility"
+      ]
+    },
+    {
+      "name": "jira_get_agile_boards",
+      "descriptionHash": "989dcd7ac8fe32d4",
+      "required": [],
+      "properties": [
+        "board_name",
+        "board_type",
+        "limit",
+        "project_key",
+        "start_at"
+      ]
+    },
+    {
+      "name": "jira_get_all_projects",
+      "descriptionHash": "170936a61d07decf",
+      "required": [],
+      "properties": [
+        "include_archived"
+      ]
+    },
+    {
+      "name": "jira_get_board_issues",
+      "descriptionHash": "c7f6eb3abff7fa18",
+      "required": [
+        "board_id",
+        "jql"
+      ],
+      "properties": [
+        "board_id",
+        "expand",
+        "fields",
+        "jql",
+        "limit",
+        "start_at"
+      ]
+    },
+    {
+      "name": "jira_get_create_fields",
+      "descriptionHash": "41667acca03765ad",
+      "required": [
+        "issue_type_id",
+        "project_key"
+      ],
+      "properties": [
+        "issue_type_id",
+        "project_key"
+      ]
+    },
+    {
+      "name": "jira_get_cross_project_dependencies",
+      "descriptionHash": "d69631064f0f2396",
+      "required": [
+        "project_key"
+      ],
+      "properties": [
+        "max_issues",
+        "project_key"
+      ]
+    },
+    {
+      "name": "jira_get_field_options",
+      "descriptionHash": "b5e4e34455a0599e",
+      "required": [
+        "field_id"
+      ],
+      "properties": [
+        "contains",
+        "context_id",
+        "field_id",
+        "issue_type",
+        "project_key",
+        "return_limit",
+        "values_only"
+      ]
+    },
+    {
+      "name": "jira_get_issue",
+      "descriptionHash": "5e066b148005ba6e",
+      "required": [
+        "issue_key"
+      ],
+      "properties": [
+        "comment_limit",
+        "expand",
+        "fields",
+        "include",
+        "issue_key",
+        "properties",
+        "update_history",
+        "use_display_names"
+      ]
+    },
+    {
+      "name": "jira_get_issue_dates",
+      "descriptionHash": "27d032da47bc2f5f",
+      "required": [
+        "issue_key"
+      ],
+      "properties": [
+        "include_status_changes",
+        "include_status_summary",
+        "issue_key"
+      ]
+    },
+    {
+      "name": "jira_get_issue_development_info",
+      "descriptionHash": "a3828f8b54ec91cb",
+      "required": [
+        "issue_key"
+      ],
+      "properties": [
+        "application_type",
+        "data_type",
+        "issue_key"
+      ]
+    },
+    {
+      "name": "jira_get_issue_images",
+      "descriptionHash": "ad34e3007899fd66",
+      "required": [
+        "issue_key"
+      ],
+      "properties": [
+        "issue_key"
+      ]
+    },
+    {
+      "name": "jira_get_issue_proforma_forms",
+      "descriptionHash": "6eaa66e9837da12d",
+      "required": [
+        "issue_key"
+      ],
+      "properties": [
+        "issue_key"
+      ]
+    },
+    {
+      "name": "jira_get_issue_sla",
+      "descriptionHash": "a89dbe434dd34b59",
+      "required": [
+        "issue_key"
+      ],
+      "properties": [
+        "include_raw_dates",
+        "issue_key",
+        "metrics",
+        "working_hours_only"
+      ]
+    },
+    {
+      "name": "jira_get_issue_watchers",
+      "descriptionHash": "a9592ea28a628b6d",
+      "required": [
+        "issue_key"
+      ],
+      "properties": [
+        "issue_key"
+      ]
+    },
+    {
+      "name": "jira_get_issues_development_info",
+      "descriptionHash": "bee5b9336af3d025",
+      "required": [
+        "issue_keys"
+      ],
+      "properties": [
+        "application_type",
+        "data_type",
+        "issue_keys"
+      ]
+    },
+    {
+      "name": "jira_get_link_types",
+      "descriptionHash": "825ad43bf8c2553e",
+      "required": [],
+      "properties": [
+        "name_filter"
+      ]
+    },
+    {
+      "name": "jira_get_proforma_form_details",
+      "descriptionHash": "c20520e8616ebe79",
+      "required": [
+        "form_id",
+        "issue_key"
+      ],
+      "properties": [
+        "form_id",
+        "issue_key"
+      ]
+    },
+    {
+      "name": "jira_get_project_components",
+      "descriptionHash": "3ef64c1b8fe43624",
+      "required": [
+        "project_key"
+      ],
+      "properties": [
+        "project_key"
+      ]
+    },
+    {
+      "name": "jira_get_project_epic_hierarchy",
+      "descriptionHash": "f610e9552dd20da6",
+      "required": [
+        "project_key"
+      ],
+      "properties": [
+        "max_epics",
+        "project_key"
+      ]
+    },
+    {
+      "name": "jira_get_project_fields",
+      "descriptionHash": "da58ff45d95ade9e",
+      "required": [
+        "project_key"
+      ],
+      "properties": [
+        "project_key"
+      ]
+    },
+    {
+      "name": "jira_get_project_issue_types",
+      "descriptionHash": "f74c3cc629189fd4",
+      "required": [
+        "project_key"
+      ],
+      "properties": [
+        "project_key"
+      ]
+    },
+    {
+      "name": "jira_get_project_issues",
+      "descriptionHash": "a0ba2b6a2dd4e324",
+      "required": [
+        "project_key"
+      ],
+      "properties": [
+        "limit",
+        "project_key",
+        "start_at"
+      ]
+    },
+    {
+      "name": "jira_get_project_versions",
+      "descriptionHash": "438aa4b1f6ce74ef",
+      "required": [
+        "project_key"
+      ],
+      "properties": [
+        "project_key"
+      ]
+    },
+    {
+      "name": "jira_get_queue_issues",
+      "descriptionHash": "d6b8d0c6b939f69a",
+      "required": [
+        "queue_id",
+        "service_desk_id"
+      ],
+      "properties": [
+        "limit",
+        "queue_id",
+        "service_desk_id",
+        "start_at"
+      ]
+    },
+    {
+      "name": "jira_get_request_type_fields",
+      "descriptionHash": "797c28423e7766bf",
+      "required": [
+        "request_type_id",
+        "service_desk_id"
+      ],
+      "properties": [
+        "request_type_id",
+        "service_desk_id"
+      ]
+    },
+    {
+      "name": "jira_get_request_types",
+      "descriptionHash": "06963b251ca5be6e",
+      "required": [
+        "service_desk_id"
+      ],
+      "properties": [
+        "limit",
+        "service_desk_id",
+        "start_at"
+      ]
+    },
+    {
+      "name": "jira_get_service_desk_for_project",
+      "descriptionHash": "a451206fbc71b308",
+      "required": [
+        "project_key"
+      ],
+      "properties": [
+        "project_key"
+      ]
+    },
+    {
+      "name": "jira_get_service_desk_queues",
+      "descriptionHash": "b69d8d300211f711",
+      "required": [
+        "service_desk_id"
+      ],
+      "properties": [
+        "limit",
+        "service_desk_id",
+        "start_at"
+      ]
+    },
+    {
+      "name": "jira_get_sprint_issues",
+      "descriptionHash": "f8691643a2f2968f",
+      "required": [
+        "sprint_id"
+      ],
+      "properties": [
+        "fields",
+        "limit",
+        "sprint_id",
+        "start_at"
+      ]
+    },
+    {
+      "name": "jira_get_sprints_from_board",
+      "descriptionHash": "6635696a0f9dbc00",
+      "required": [
+        "board_id"
+      ],
+      "properties": [
+        "board_id",
+        "limit",
+        "start_at",
+        "state"
+      ]
+    },
+    {
+      "name": "jira_get_transitions",
+      "descriptionHash": "2eef7031d2750a44",
+      "required": [
+        "issue_key"
+      ],
+      "properties": [
+        "issue_key"
+      ]
+    },
+    {
+      "name": "jira_get_user_profile",
+      "descriptionHash": "bf9b6c1ec5f6ebd2",
+      "required": [
+        "user_identifier"
+      ],
+      "properties": [
+        "user_identifier"
+      ]
+    },
+    {
+      "name": "jira_get_worklog",
+      "descriptionHash": "9dc1a15453ba5ce3",
+      "required": [
+        "issue_key"
+      ],
+      "properties": [
+        "issue_key"
+      ]
+    },
+    {
+      "name": "jira_link_to_epic",
+      "descriptionHash": "dfe316d7bae293f3",
+      "required": [
+        "epic_key",
+        "issue_key"
+      ],
+      "properties": [
+        "epic_key",
+        "issue_key"
+      ]
+    },
+    {
+      "name": "jira_move_issue",
+      "descriptionHash": "a7525ff36db5a609",
+      "required": [
+        "issue_key",
+        "target_project_key"
+      ],
+      "properties": [
+        "issue_key",
+        "target_project_key"
+      ]
+    },
+    {
+      "name": "jira_move_issues_to_backlog",
+      "descriptionHash": "8d0c1b878680e6dd",
+      "required": [
+        "issue_keys"
+      ],
+      "properties": [
+        "issue_keys"
+      ]
+    },
+    {
+      "name": "jira_remove_issue_link",
+      "descriptionHash": "f9c52a28f84cf984",
+      "required": [
+        "link_id"
+      ],
+      "properties": [
+        "link_id"
+      ]
+    },
+    {
+      "name": "jira_remove_watcher",
+      "descriptionHash": "072fe3996d444f08",
+      "required": [
+        "issue_key"
+      ],
+      "properties": [
+        "account_id",
+        "issue_key",
+        "username"
+      ]
+    },
+    {
+      "name": "jira_search",
+      "descriptionHash": "2d427b4eeb2fddb6",
+      "required": [
+        "jql"
+      ],
+      "properties": [
+        "expand",
+        "fields",
+        "jql",
+        "limit",
+        "page_token",
+        "projects_filter",
+        "start_at",
+        "use_display_names"
+      ]
+    },
+    {
+      "name": "jira_search_assignable_users",
+      "descriptionHash": "2065c9dd26a6523d",
+      "required": [
+        "query"
+      ],
+      "properties": [
+        "issue_key",
+        "limit",
+        "project_key",
+        "query"
+      ]
+    },
+    {
+      "name": "jira_search_fields",
+      "descriptionHash": "2a064c873d892d2d",
+      "required": [],
+      "properties": [
+        "keyword",
+        "limit",
+        "refresh"
+      ]
+    },
+    {
+      "name": "jira_search_projects",
+      "descriptionHash": "9219bfdf09f13bef",
+      "required": [
+        "query"
+      ],
+      "properties": [
+        "current_project_ids",
+        "max_results",
+        "query"
+      ]
+    },
+    {
+      "name": "jira_transition_issue",
+      "descriptionHash": "4d538689b68154a0",
+      "required": [
+        "issue_key",
+        "transition_id"
+      ],
+      "properties": [
+        "comment",
+        "fields",
+        "issue_key",
+        "transition_id"
+      ]
+    },
+    {
+      "name": "jira_update_issue",
+      "descriptionHash": "ea5992e04d019611",
+      "required": [
+        "fields",
+        "issue_key"
+      ],
+      "properties": [
+        "additional_fields",
+        "attachments",
+        "components",
+        "fields",
+        "issue_key",
+        "return_fields"
+      ]
+    },
+    {
+      "name": "jira_update_proforma_form_answers",
+      "descriptionHash": "6da369f01bb1e860",
+      "required": [
+        "answers",
+        "form_id",
+        "issue_key"
+      ],
+      "properties": [
+        "answers",
+        "form_id",
+        "issue_key"
+      ]
+    },
+    {
+      "name": "jira_update_sprint",
+      "descriptionHash": "a922452a3e78ec2a",
+      "required": [
+        "sprint_id"
+      ],
+      "properties": [
+        "end_date",
+        "goal",
+        "name",
+        "sprint_id",
+        "start_date",
+        "state"
+      ]
+    },
+    {
+      "name": "jira_update_version",
+      "descriptionHash": "48c8952602cb9d89",
+      "required": [
+        "version_id"
+      ],
+      "properties": [
+        "archived",
+        "description",
+        "name",
+        "release_date",
+        "released",
+        "start_date",
+        "version_id"
+      ]
+    }
+  ]
+}

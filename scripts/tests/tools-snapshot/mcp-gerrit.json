@@ -1,0 +1,263 @@
+{
+  "_comment": "工具快照（T-FLOW-02）：只含工具名、说明哈希与字段名，不含凭证与实例信息。由 scripts/tests/run-tests.bat --snapshot 生成，请勿手工编辑。",
+  "service": "mcp-gerrit",
+  "capturedAt": "2026-11-26",
+  "toolCount": 20,
+  "tools": [
+    {
+      "name": "abandon_change",
+      "descriptionHash": "51941a3a5a8f445e",
+      "required": [
+        "change_id"
+      ],
+      "properties": [
+        "change_id",
+        "gerrit_base_url",
+        "message"
+      ]
+    },
+    {
+      "name": "add_reviewer",
+      "descriptionHash": "821e4b9e8e4e06c8",
+      "required": [
+        "change_id",
+        "reviewer"
+      ],
+      "properties": [
+        "change_id",
+        "gerrit_base_url",
+        "reviewer",
+        "state"
+      ]
+    },
+    {
+      "name": "changes_submitted_together",
+      "descriptionHash": "23cb95cdd247a56c",
+      "required": [
+        "change_id"
+      ],
+      "properties": [
+        "change_id",
+        "gerrit_base_url",
+        "options"
+      ]
+    },
+    {
+      "name": "create_change",
+      "descriptionHash": "b3e4a9f691cc3d85",
+      "required": [
+        "branch",
+        "project",
+        "subject"
+      ],
+      "properties": [
+        "branch",
+        "gerrit_base_url",
+        "project",
+        "status",
+        "subject",
+        "topic"
+      ]
+    },
+    {
+      "name": "get_bugs_from_cl",
+      "descriptionHash": "8ab005728a36a58f",
+      "required": [
+        "change_id"
+      ],
+      "properties": [
+        "change_id",
+        "gerrit_base_url"
+      ]
+    },
+    {
+      "name": "get_change_details",
+      "descriptionHash": "324a81766a61bbea",
+      "required": [
+        "change_id"
+      ],
+      "properties": [
+        "change_id",
+        "gerrit_base_url",
+        "options"
+      ]
+    },
+    {
+      "name": "get_commit_message",
+      "descriptionHash": "f8e0c22db71ac058",
+      "required": [
+        "change_id"
+      ],
+      "properties": [
+        "change_id",
+        "gerrit_base_url"
+      ]
+    },
+    {
+      "name": "get_file_diff",
+      "descriptionHash": "5948760dfdbe4588",
+      "required": [
+        "change_id",
+        "file_path"
+      ],
+      "properties": [
+        "change_id",
+        "file_path",
+        "gerrit_base_url"
+      ]
+    },
+    {
+      "name": "get_most_recent_cl",
+      "descriptionHash": "ae0630b1d9ad3d19",
+      "required": [
+        "user"
+      ],
+      "properties": [
+        "gerrit_base_url",
+        "user"
+      ]
+    },
+    {
+      "name": "list_change_comments",
+      "descriptionHash": "24ca6ef3b522c11a",
+      "required": [
+        "change_id"
+      ],
+      "properties": [
+        "change_id",
+        "gerrit_base_url"
+      ]
+    },
+    {
+      "name": "list_change_files",
+      "descriptionHash": "f7ce7a3ca92f2be3",
+      "required": [
+        "change_id"
+      ],
+      "properties": [
+        "change_id",
+        "gerrit_base_url"
+      ]
+    },
+    {
+      "name": "post_review_comment",
+      "descriptionHash": "dfac1e8c37f1a4c9",
+      "required": [
+        "change_id"
+      ],
+      "properties": [
+        "change_id",
+        "comments",
+        "gerrit_base_url",
+        "labels",
+        "message"
+      ]
+    },
+    {
+      "name": "query_changes",
+      "descriptionHash": "ce7a3e9b5680e3b4",
+      "required": [
+        "query"
+      ],
+      "properties": [
+        "gerrit_base_url",
+        "limit",
+        "options",
+        "query"
+      ]
+    },
+    {
+      "name": "query_changes_by_date_and_filters",
+      "descriptionHash": "be55b150245c0594",
+      "required": [
+        "end_date",
+        "start_date"
+      ],
+      "properties": [
+        "end_date",
+        "gerrit_base_url",
+        "limit",
+        "message_substring",
+        "project",
+        "start_date",
+        "status"
+      ]
+    },
+    {
+      "name": "revert_change",
+      "descriptionHash": "a4896605615adc16",
+      "required": [
+        "change_id"
+      ],
+      "properties": [
+        "change_id",
+        "gerrit_base_url",
+        "message"
+      ]
+    },
+    {
+      "name": "revert_submission",
+      "descriptionHash": "96be103ae3e58871",
+      "required": [
+        "change_id"
+      ],
+      "properties": [
+        "change_id",
+        "gerrit_base_url",
+        "message"
+      ]
+    },
+    {
+      "name": "set_ready_for_review",
+      "descriptionHash": "687c91ba1afaf277",
+      "required": [
+        "change_id"
+      ],
+      "properties": [
+        "change_id",
+        "gerrit_base_url"
+      ]
+    },
+    {
+      "name": "set_topic",
+      "descriptionHash": "acaacb56086fc0a0",
+      "required": [
+        "change_id",
+        "topic"
+      ],
+      "properties": [
+        "change_id",
+        "gerrit_base_url",
+        "topic"
+      ]
+    },
+    {
+      "name": "set_work_in_progress",
+      "descriptionHash": "cd61429e89e7e793",
+      "required": [
+        "change_id"
+      ],
+      "properties": [
+        "change_id",
+        "gerrit_base_url",
+        "message"
+      ]
+    },
+    {
+      "name": "suggest_reviewers",
+      "descriptionHash": "ec5384ec67cbc139",
+      "required": [
+        "change_id",
+        "query"
+      ],
+      "properties": [
+        "change_id",
+        "exclude_groups",
+        "gerrit_base_url",
+        "limit",
+        "query",
+        "reviewer_state"
+      ]
+    }
+  ]
+}

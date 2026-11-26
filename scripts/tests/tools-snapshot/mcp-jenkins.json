@@ -1,0 +1,156 @@
+{
+  "_comment": "工具快照（T-FLOW-02）：只含工具名、说明哈希与字段名，不含凭证与实例信息。由 scripts/tests/run-tests.bat --snapshot 生成，请勿手工编辑。",
+  "service": "mcp-jenkins",
+  "capturedAt": "2026-11-26",
+  "toolCount": 14,
+  "tools": [
+    {
+      "name": "cancelQueuedBuild",
+      "descriptionHash": "072d7415a3f0e865",
+      "required": [
+        "jobFullName"
+      ],
+      "properties": [
+        "jobFullName",
+        "queueId"
+      ]
+    },
+    {
+      "name": "getBuild",
+      "descriptionHash": "055fd1dda919210e",
+      "required": [
+        "jobFullName"
+      ],
+      "properties": [
+        "buildNumber",
+        "jobFullName"
+      ]
+    },
+    {
+      "name": "getJob",
+      "descriptionHash": "d9f74e58dc3c9f92",
+      "required": [
+        "jobFullName"
+      ],
+      "properties": [
+        "jobFullName"
+      ]
+    },
+    {
+      "name": "getJobs",
+      "descriptionHash": "b56f4a196eb48106",
+      "required": [],
+      "properties": [
+        "limit",
+        "parentFullName",
+        "skip"
+      ]
+    },
+    {
+      "name": "getQueueInfo",
+      "descriptionHash": "1e96848910d41ea3",
+      "required": [],
+      "properties": [
+        "jobFullName"
+      ]
+    },
+    {
+      "name": "getQueueItem",
+      "descriptionHash": "d01e746a675361c2",
+      "required": [
+        "queueId"
+      ],
+      "properties": [
+        "queueId"
+      ]
+    },
+    {
+      "name": "getStatus",
+      "descriptionHash": "63b1e1da4136cd74",
+      "required": [],
+      "properties": []
+    },
+    {
+      "name": "listBuildArtifacts",
+      "descriptionHash": "22eb34dcdd3b704a",
+      "required": [
+        "jobFullName"
+      ],
+      "properties": [
+        "buildNumber",
+        "jobFullName"
+      ]
+    },
+    {
+      "name": "readBuildArtifact",
+      "descriptionHash": "2de14d1d2c986971",
+      "required": [
+        "artifactPath",
+        "jobFullName"
+      ],
+      "properties": [
+        "artifactPath",
+        "buildNumber",
+        "format",
+        "jobFullName"
+      ]
+    },
+    {
+      "name": "scheduleBuild",
+      "descriptionHash": "280b191440f76db6",
+      "required": [
+        "jobFullName",
+        "parameters",
+        "scheduleTime"
+      ],
+      "properties": [
+        "description",
+        "jobFullName",
+        "parameters",
+        "scheduleTime"
+      ]
+    },
+    {
+      "name": "stopBuild",
+      "descriptionHash": "f44ce9ee4e2366e4",
+      "required": [
+        "jobFullName"
+      ],
+      "properties": [
+        "buildNumber",
+        "jobFullName"
+      ]
+    },
+    {
+      "name": "triggerBuild",
+      "descriptionHash": "6ed615bc0cbe74c5",
+      "required": [
+        "jobFullName",
+        "parameters"
+      ],
+      "properties": [
+        "jobFullName",
+        "parameters"
+      ]
+    },
+    {
+      "name": "updateBuild",
+      "descriptionHash": "2768b0882c0ea9c8",
+      "required": [
+        "jobFullName"
+      ],
+      "properties": [
+        "buildNumber",
+        "description",
+        "displayName",
+        "jobFullName"
+      ]
+    },
+    {
+      "name": "whoAmI",
+      "descriptionHash": "9bb6f2cff5c0033a",
+      "required": [],
+      "properties": []
+    }
+  ]
+}

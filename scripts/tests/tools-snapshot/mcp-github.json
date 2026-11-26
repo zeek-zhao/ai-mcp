@@ -1,0 +1,753 @@
+{
+  "_comment": "工具快照（T-FLOW-02）：只含工具名、说明哈希与字段名，不含凭证与实例信息。由 scripts/tests/run-tests.bat --snapshot 生成，请勿手工编辑。",
+  "service": "mcp-github",
+  "capturedAt": "2026-11-26",
+  "toolCount": 46,
+  "tools": [
+    {
+      "name": "add_comment_to_pending_review",
+      "descriptionHash": "c01d9b539761ed34",
+      "required": [
+        "body",
+        "owner",
+        "path",
+        "pullNumber",
+        "repo",
+        "subjectType"
+      ],
+      "properties": [
+        "body",
+        "line",
+        "owner",
+        "path",
+        "pullNumber",
+        "repo",
+        "side",
+        "startLine",
+        "startSide",
+        "subjectType"
+      ]
+    },
+    {
+      "name": "add_issue_comment",
+      "descriptionHash": "0eab077d2b8286c1",
+      "required": [
+        "issue_number",
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "body",
+        "comment_id",
+        "issue_number",
+        "owner",
+        "reaction",
+        "repo"
+      ]
+    },
+    {
+      "name": "add_reply_to_pull_request_comment",
+      "descriptionHash": "bc6c858f67a973e0",
+      "required": [
+        "commentId",
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "body",
+        "commentId",
+        "owner",
+        "pullNumber",
+        "reaction",
+        "repo"
+      ]
+    },
+    {
+      "name": "assign_copilot_to_issue",
+      "descriptionHash": "d2deb22f5d871f4d",
+      "required": [
+        "issue_number",
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "base_ref",
+        "custom_instructions",
+        "issue_number",
+        "owner",
+        "repo"
+      ]
+    },
+    {
+      "name": "create_branch",
+      "descriptionHash": "178c4aa2cad9c4de",
+      "required": [
+        "branch",
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "branch",
+        "from_branch",
+        "owner",
+        "repo"
+      ]
+    },
+    {
+      "name": "create_or_update_file",
+      "descriptionHash": "493dc7efed597b08",
+      "required": [
+        "branch",
+        "content",
+        "message",
+        "owner",
+        "path",
+        "repo"
+      ],
+      "properties": [
+        "allow_symlink_write",
+        "branch",
+        "content",
+        "message",
+        "owner",
+        "path",
+        "repo",
+        "sha"
+      ]
+    },
+    {
+      "name": "create_pull_request",
+      "descriptionHash": "b3ce1a8e1c8396e5",
+      "required": [
+        "base",
+        "head",
+        "owner",
+        "repo",
+        "title"
+      ],
+      "properties": [
+        "base",
+        "body",
+        "draft",
+        "head",
+        "maintainer_can_modify",
+        "owner",
+        "repo",
+        "reviewers",
+        "title"
+      ]
+    },
+    {
+      "name": "create_repository",
+      "descriptionHash": "4b58d95b681b9e48",
+      "required": [
+        "name"
+      ],
+      "properties": [
+        "autoInit",
+        "description",
+        "name",
+        "organization",
+        "private"
+      ]
+    },
+    {
+      "name": "delete_file",
+      "descriptionHash": "a6706184f6656f1e",
+      "required": [
+        "branch",
+        "message",
+        "owner",
+        "path",
+        "repo"
+      ],
+      "properties": [
+        "branch",
+        "message",
+        "owner",
+        "path",
+        "repo"
+      ]
+    },
+    {
+      "name": "fork_repository",
+      "descriptionHash": "b9c81712c56e4817",
+      "required": [
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "organization",
+        "owner",
+        "repo"
+      ]
+    },
+    {
+      "name": "get_commit",
+      "descriptionHash": "a27095bf05dc570a",
+      "required": [
+        "owner",
+        "repo",
+        "sha"
+      ],
+      "properties": [
+        "detail",
+        "owner",
+        "page",
+        "perPage",
+        "repo",
+        "sha"
+      ]
+    },
+    {
+      "name": "get_file_contents",
+      "descriptionHash": "54de6216aa12cd8d",
+      "required": [
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "fields",
+        "owner",
+        "path",
+        "ref",
+        "repo",
+        "sha"
+      ]
+    },
+    {
+      "name": "get_label",
+      "descriptionHash": "bc5e986298d73668",
+      "required": [
+        "name",
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "name",
+        "owner",
+        "repo"
+      ]
+    },
+    {
+      "name": "get_latest_release",
+      "descriptionHash": "57a49eb576b15e08",
+      "required": [
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "owner",
+        "repo"
+      ]
+    },
+    {
+      "name": "get_me",
+      "descriptionHash": "bc34f566cc782d56",
+      "required": [],
+      "properties": []
+    },
+    {
+      "name": "get_release_by_tag",
+      "descriptionHash": "370170693dc5177b",
+      "required": [
+        "owner",
+        "repo",
+        "tag"
+      ],
+      "properties": [
+        "owner",
+        "repo",
+        "tag"
+      ]
+    },
+    {
+      "name": "get_tag",
+      "descriptionHash": "e6d557e07eb01ac8",
+      "required": [
+        "owner",
+        "repo",
+        "tag"
+      ],
+      "properties": [
+        "owner",
+        "repo",
+        "tag"
+      ]
+    },
+    {
+      "name": "get_team_members",
+      "descriptionHash": "e86ce60eeea8d7fc",
+      "required": [
+        "org",
+        "team_slug"
+      ],
+      "properties": [
+        "org",
+        "team_slug"
+      ]
+    },
+    {
+      "name": "get_teams",
+      "descriptionHash": "99380d708092b476",
+      "required": [],
+      "properties": [
+        "user"
+      ]
+    },
+    {
+      "name": "issue_read",
+      "descriptionHash": "e3ccc7984b309935",
+      "required": [
+        "issue_number",
+        "method",
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "issue_number",
+        "method",
+        "owner",
+        "page",
+        "perPage",
+        "repo"
+      ]
+    },
+    {
+      "name": "issue_write",
+      "descriptionHash": "8fe78ac80b6a1295",
+      "required": [
+        "method",
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "assignees",
+        "body",
+        "duplicate_of",
+        "issue_fields",
+        "issue_number",
+        "labels",
+        "method",
+        "milestone",
+        "owner",
+        "parent_issue_number",
+        "parent_owner",
+        "parent_repo",
+        "repo",
+        "state",
+        "state_reason",
+        "title",
+        "type"
+      ]
+    },
+    {
+      "name": "list_branches",
+      "descriptionHash": "8ce903bf8c1572fd",
+      "required": [
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "owner",
+        "page",
+        "perPage",
+        "repo"
+      ]
+    },
+    {
+      "name": "list_commits",
+      "descriptionHash": "dd2e7a438ec8ef9f",
+      "required": [
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "author",
+        "fields",
+        "owner",
+        "page",
+        "path",
+        "perPage",
+        "repo",
+        "sha",
+        "since",
+        "until"
+      ]
+    },
+    {
+      "name": "list_issue_fields",
+      "descriptionHash": "2dd58d0918a55cb4",
+      "required": [
+        "owner"
+      ],
+      "properties": [
+        "owner",
+        "repo"
+      ]
+    },
+    {
+      "name": "list_issue_types",
+      "descriptionHash": "044c396ff868d9a6",
+      "required": [
+        "owner"
+      ],
+      "properties": [
+        "owner",
+        "repo"
+      ]
+    },
+    {
+      "name": "list_issues",
+      "descriptionHash": "c41469eaf78f9958",
+      "required": [
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "after",
+        "direction",
+        "field_filters",
+        "fields",
+        "labels",
+        "orderBy",
+        "owner",
+        "perPage",
+        "repo",
+        "since",
+        "state"
+      ]
+    },
+    {
+      "name": "list_pull_requests",
+      "descriptionHash": "c249adc3491b5988",
+      "required": [
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "base",
+        "direction",
+        "fields",
+        "head",
+        "owner",
+        "page",
+        "perPage",
+        "repo",
+        "sort",
+        "state"
+      ]
+    },
+    {
+      "name": "list_releases",
+      "descriptionHash": "16c40a2d80141352",
+      "required": [
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "fields",
+        "owner",
+        "page",
+        "perPage",
+        "repo"
+      ]
+    },
+    {
+      "name": "list_repository_collaborators",
+      "descriptionHash": "adbe2ab4be9b09cf",
+      "required": [
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "affiliation",
+        "owner",
+        "page",
+        "perPage",
+        "repo"
+      ]
+    },
+    {
+      "name": "list_tags",
+      "descriptionHash": "b45b57651e9a56b5",
+      "required": [
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "owner",
+        "page",
+        "perPage",
+        "repo"
+      ]
+    },
+    {
+      "name": "merge_pull_request",
+      "descriptionHash": "124cd641ce348386",
+      "required": [
+        "owner",
+        "pullNumber",
+        "repo"
+      ],
+      "properties": [
+        "commit_message",
+        "commit_title",
+        "expectedHeadSha",
+        "merge_method",
+        "owner",
+        "pullNumber",
+        "repo"
+      ]
+    },
+    {
+      "name": "pull_request_read",
+      "descriptionHash": "2d2b3f1fbb088bc1",
+      "required": [
+        "method",
+        "owner",
+        "pullNumber",
+        "repo"
+      ],
+      "properties": [
+        "after",
+        "method",
+        "owner",
+        "page",
+        "perPage",
+        "pullNumber",
+        "repo"
+      ]
+    },
+    {
+      "name": "pull_request_review_write",
+      "descriptionHash": "6f34129d431b032f",
+      "required": [
+        "method",
+        "owner",
+        "pullNumber",
+        "repo"
+      ],
+      "properties": [
+        "body",
+        "commitID",
+        "event",
+        "method",
+        "owner",
+        "pullNumber",
+        "repo",
+        "threadId"
+      ]
+    },
+    {
+      "name": "push_files",
+      "descriptionHash": "0ea99ad23e44e739",
+      "required": [
+        "branch",
+        "files",
+        "message",
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "branch",
+        "files",
+        "message",
+        "owner",
+        "repo"
+      ]
+    },
+    {
+      "name": "request_copilot_review",
+      "descriptionHash": "0a31c498daefdb43",
+      "required": [
+        "owner",
+        "pullNumber",
+        "repo"
+      ],
+      "properties": [
+        "owner",
+        "pullNumber",
+        "repo"
+      ]
+    },
+    {
+      "name": "search_code",
+      "descriptionHash": "80d70342e3a3eb8b",
+      "required": [
+        "query"
+      ],
+      "properties": [
+        "fields",
+        "order",
+        "page",
+        "perPage",
+        "query",
+        "sort"
+      ]
+    },
+    {
+      "name": "search_commits",
+      "descriptionHash": "2daaa82a55c91ba3",
+      "required": [
+        "query"
+      ],
+      "properties": [
+        "order",
+        "page",
+        "perPage",
+        "query",
+        "sort"
+      ]
+    },
+    {
+      "name": "search_issues",
+      "descriptionHash": "54ee7223ca0f61d3",
+      "required": [
+        "query"
+      ],
+      "properties": [
+        "fields",
+        "order",
+        "owner",
+        "page",
+        "perPage",
+        "query",
+        "repo",
+        "sort"
+      ]
+    },
+    {
+      "name": "search_pull_requests",
+      "descriptionHash": "d8a220faae6baa7c",
+      "required": [
+        "query"
+      ],
+      "properties": [
+        "fields",
+        "order",
+        "owner",
+        "page",
+        "perPage",
+        "query",
+        "repo",
+        "sort"
+      ]
+    },
+    {
+      "name": "search_repositories",
+      "descriptionHash": "7b9c5ffba195b04b",
+      "required": [
+        "query"
+      ],
+      "properties": [
+        "minimal_output",
+        "order",
+        "page",
+        "perPage",
+        "query",
+        "sort"
+      ]
+    },
+    {
+      "name": "search_users",
+      "descriptionHash": "e2c14890a74e50c8",
+      "required": [
+        "query"
+      ],
+      "properties": [
+        "order",
+        "page",
+        "perPage",
+        "query",
+        "sort"
+      ]
+    },
+    {
+      "name": "sub_issue_write",
+      "descriptionHash": "0e8fa66b77f7ec60",
+      "required": [
+        "issue_number",
+        "method",
+        "owner",
+        "repo",
+        "sub_issue_id"
+      ],
+      "properties": [
+        "after_id",
+        "before_id",
+        "issue_number",
+        "method",
+        "owner",
+        "replace_parent",
+        "repo",
+        "sub_issue_id"
+      ]
+    },
+    {
+      "name": "ui_get",
+      "descriptionHash": "63ac75424c9d3736",
+      "required": [
+        "method",
+        "owner"
+      ],
+      "properties": [
+        "method",
+        "owner",
+        "repo"
+      ]
+    },
+    {
+      "name": "update_issue_comment",
+      "descriptionHash": "bfbe8aa32f6f7c90",
+      "required": [
+        "body",
+        "comment_id",
+        "owner",
+        "repo"
+      ],
+      "properties": [
+        "body",
+        "comment_id",
+        "owner",
+        "repo"
+      ]
+    },
+    {
+      "name": "update_pull_request",
+      "descriptionHash": "bed4d74cfd86d23a",
+      "required": [
+        "owner",
+        "pullNumber",
+        "repo"
+      ],
+      "properties": [
+        "base",
+        "body",
+        "draft",
+        "maintainer_can_modify",
+        "owner",
+        "pullNumber",
+        "repo",
+        "reviewers",
+        "state",
+        "title"
+      ]
+    },
+    {
+      "name": "update_pull_request_branch",
+      "descriptionHash": "bb1dacdad1b56b12",
+      "required": [
+        "owner",
+        "pullNumber",
+        "repo"
+      ],
+      "properties": [
+        "expectedHeadSha",
+        "owner",
+        "pullNumber",
+        "repo"
+      ]
+    }
+  ]
+}
