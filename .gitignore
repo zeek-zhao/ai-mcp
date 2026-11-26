@@ -11,7 +11,9 @@
 # 统一配置：真实配置含凭证，永不入库；模板与 Schema 随仓库分发
 /mcp.config.json
 # Magpie 网关路由：填入本机绝对路径的版本不入库；不含本机信息的样例 gateway.routes.sample.json 随仓库分发
+# 菜单 8「生成 Magpie 路由配置」的输出，以及选择「另存为带时间戳的副本」时生成的 gateway.routes.<时间戳>.json
 /gateway.routes.json
+/gateway.routes.*.json
 
 # ===== 运行时产物 =====
 logs/

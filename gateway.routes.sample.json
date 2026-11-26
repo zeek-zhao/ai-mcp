@@ -1,24 +1,25 @@
 {
+  "_comment": "Magpie 网关路由样例。${MCP_SUITE_ROOT} 是仓库根目录的占位符：运行 scripts\\mcpctl.ps1 的菜单 8 会在本机生成 gateway.routes.json（已被 .gitignore 排除，不入库），把占位符替换为本机绝对路径并打印登记命令。本文件不含本机路径与凭证，凭证只在统一配置 mcp.config.json。服务名固定，不加前缀。",
   "mcpServers": {
     "Gerrit": {
-      "command": "<仓库根>\\mcp-gerrit\\venv\\Scripts\\python.exe",
-      "args": ["<仓库根>\\mcp-gerrit\\launcher.py"],
-      "env": { "MCP_SUITE_CONFIG": "<仓库根>\\mcp.config.json" }
+      "command": "${MCP_SUITE_ROOT}\\mcp-gerrit\\venv\\Scripts\\python.exe",
+      "args": ["${MCP_SUITE_ROOT}\\mcp-gerrit\\launcher.py"],
+      "env": { "MCP_SUITE_CONFIG": "${MCP_SUITE_ROOT}\\mcp.config.json" }
     },
     "GitHub": {
       "command": "node",
-      "args": ["<仓库根>\\mcp-github\\launcher.mjs"],
-      "env": { "MCP_SUITE_CONFIG": "<仓库根>\\mcp.config.json" }
+      "args": ["${MCP_SUITE_ROOT}\\mcp-github\\launcher.mjs"],
+      "env": { "MCP_SUITE_CONFIG": "${MCP_SUITE_ROOT}\\mcp.config.json" }
     },
     "Jenkins": {
       "command": "node",
-      "args": ["<仓库根>\\mcp-jenkins\\launcher.mjs"],
-      "env": { "MCP_SUITE_CONFIG": "<仓库根>\\mcp.config.json" }
+      "args": ["${MCP_SUITE_ROOT}\\mcp-jenkins\\launcher.mjs"],
+      "env": { "MCP_SUITE_CONFIG": "${MCP_SUITE_ROOT}\\mcp.config.json" }
     },
     "Atlassian": {
-      "command": "<仓库根>\\mcp-atlassian\\venv\\Scripts\\python.exe",
-      "args": ["<仓库根>\\mcp-atlassian\\launcher.py"],
-      "env": { "MCP_SUITE_CONFIG": "<仓库根>\\mcp.config.json" }
+      "command": "${MCP_SUITE_ROOT}\\mcp-atlassian\\venv\\Scripts\\python.exe",
+      "args": ["${MCP_SUITE_ROOT}\\mcp-atlassian\\launcher.py"],
+      "env": { "MCP_SUITE_CONFIG": "${MCP_SUITE_ROOT}\\mcp.config.json" }
     }
   }
 }
