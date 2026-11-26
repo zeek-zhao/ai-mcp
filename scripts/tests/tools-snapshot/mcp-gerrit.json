@@ -2,7 +2,7 @@
   "_comment": "工具快照（T-FLOW-02）：只含工具名、说明哈希与字段名，不含凭证与实例信息。由 scripts/tests/run-tests.bat --snapshot 生成，请勿手工编辑。",
   "service": "mcp-gerrit",
   "capturedAt": "2026-11-26",
-  "toolCount": 20,
+  "toolCount": 12,
   "tools": [
     {
       "name": "abandon_change",
@@ -151,112 +151,6 @@
         "gerrit_base_url",
         "labels",
         "message"
-      ]
-    },
-    {
-      "name": "query_changes",
-      "descriptionHash": "ce7a3e9b5680e3b4",
-      "required": [
-        "query"
-      ],
-      "properties": [
-        "gerrit_base_url",
-        "limit",
-        "options",
-        "query"
-      ]
-    },
-    {
-      "name": "query_changes_by_date_and_filters",
-      "descriptionHash": "be55b150245c0594",
-      "required": [
-        "end_date",
-        "start_date"
-      ],
-      "properties": [
-        "end_date",
-        "gerrit_base_url",
-        "limit",
-        "message_substring",
-        "project",
-        "start_date",
-        "status"
-      ]
-    },
-    {
-      "name": "revert_change",
-      "descriptionHash": "a4896605615adc16",
-      "required": [
-        "change_id"
-      ],
-      "properties": [
-        "change_id",
-        "gerrit_base_url",
-        "message"
-      ]
-    },
-    {
-      "name": "revert_submission",
-      "descriptionHash": "96be103ae3e58871",
-      "required": [
-        "change_id"
-      ],
-      "properties": [
-        "change_id",
-        "gerrit_base_url",
-        "message"
-      ]
-    },
-    {
-      "name": "set_ready_for_review",
-      "descriptionHash": "687c91ba1afaf277",
-      "required": [
-        "change_id"
-      ],
-      "properties": [
-        "change_id",
-        "gerrit_base_url"
-      ]
-    },
-    {
-      "name": "set_topic",
-      "descriptionHash": "acaacb56086fc0a0",
-      "required": [
-        "change_id",
-        "topic"
-      ],
-      "properties": [
-        "change_id",
-        "gerrit_base_url",
-        "topic"
-      ]
-    },
-    {
-      "name": "set_work_in_progress",
-      "descriptionHash": "cd61429e89e7e793",
-      "required": [
-        "change_id"
-      ],
-      "properties": [
-        "change_id",
-        "gerrit_base_url",
-        "message"
-      ]
-    },
-    {
-      "name": "suggest_reviewers",
-      "descriptionHash": "ec5384ec67cbc139",
-      "required": [
-        "change_id",
-        "query"
-      ],
-      "properties": [
-        "change_id",
-        "exclude_groups",
-        "gerrit_base_url",
-        "limit",
-        "query",
-        "reviewer_state"
       ]
     }
   ]
