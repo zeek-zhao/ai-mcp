@@ -268,9 +268,8 @@ function Get-McpServiceDiagnostics {
             $hint = $ready.Reason
         }
         elseif (-not $ready.Ready) {
-            $hint = '配置未就绪（' + $ready.Reason
-            if (@($ready.Missing).Count -gt 0) { $hint += '，缺失：' + (@($ready.Missing) -join ', ') }
-            $hint += '），请运行配置向导（菜单 4）补齐，或直接编辑 mcp.config.json'
+            # Reason 已是逐字段的“字段路径 + 中文说明”（占位符 / 模板参考值 / 空值分开提示），不再重复拼接缺失清单
+            $hint = '配置未就绪（' + $ready.Reason + '），请运行配置向导（菜单 4）补齐，或直接编辑 mcp.config.json'
         }
         elseif (-not $cmdFilled) {
             $hint = '启动命令未配置：请检查 scripts/mcpctl.config.ps1 中该服务的 StartCommand（缺失时请参照已接入服务补全，随后运行 Bootstrap 准备依赖环境）'

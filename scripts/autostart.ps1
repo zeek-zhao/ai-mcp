@@ -250,10 +250,10 @@ function Get-McpPreflightResult {
             $items.Add((New-McpPreflightItem -Category '配置' -Item $svcName -Level Pass -Detail '启用服务的必填项已填写'))
         }
         else {
-            $labels = @(@($st.Missing) | ForEach-Object { Get-McpSuiteFieldLabel -Path $_ })
-            $missingText = (@($st.Missing) -join '、')
-            if ($labels.Count -gt 0) { $missingText = ($labels -join '、') }
-            $items.Add((New-McpPreflightItem -Category '配置' -Item $svcName -Level Fail -Detail ('必填项未填写或仍为占位符：{0}' -f $missingText) -Fix ('运行 mcpctl 菜单 4 配置向导，补齐 services.{0} 的上述字段' -f $st.Key)))
+            # 逐字段问题（占位符 / 模板参考值 / 空值）用中文说明列出；没有逐字段信息时回退到整体原因
+            $detail = (@(Get-McpSuiteReadyIssueLines -Ready $st) -join '；')
+            if (-not $detail) { $detail = $st.Reason }
+            $items.Add((New-McpPreflightItem -Category '配置' -Item $svcName -Level Fail -Detail ('必填项未就绪：{0}' -f $detail) -Fix ('运行 mcpctl 菜单 4 配置向导，补齐 services.{0} 的上述字段（模板参考值需替换为真实值）' -f $st.Key)))
         }
     }
 

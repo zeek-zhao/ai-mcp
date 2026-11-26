@@ -15,7 +15,8 @@ services.gerrit 合成为上游格式，写到 <仓库根>/var/tmp/gerrit-config
     - <仓库根>/var/ 已被 .gitignore 排除，不会入库。
 
 安全约束：stdout 只留给 MCP 协议，诊断信息一律写 stderr；任何输出不得包含凭证明文；
-占位符（<...> 形态）或空值视为未填写，直接拒绝启动（与 mcpctl 配置向导的就绪判定一致）。
+空值、占位符（<...> 形态）、模板参考值（带 example.com / zhangsan / yourcompany 等指纹）都视为未填写，
+直接拒绝启动（与 mcpctl 配置向导的就绪判定一致）。
 """
 
 import ctypes
@@ -32,6 +33,8 @@ TMP_DIR = REPO_ROOT / "var" / "tmp"
 TMP_PATTERN = re.compile(r"gerrit-config-(\d+)\.json")
 KEY = "gerrit"
 TAG = "[gerrit-launcher]"
+# 模板参考值指纹：关键词必须与 scripts/lib/suite-config.ps1 的 $script:McpSuiteTemplateValuePattern 一致（CI 校验）
+TEMPLATE_VALUE_PATTERN = re.compile(r"example\.com|example\.net|yourcompany|zhangsan|your-name|your-company", re.IGNORECASE)
 # 字段的中文名，与 scripts/lib/config-wizard.ps1 的字段目录保持一致
 LABELS = {
     "enabled": "是否启用 Gerrit",
@@ -50,6 +53,21 @@ def fail(message: str) -> None:
 def is_placeholder(value: str) -> bool:
     v = value.strip()
     return v.startswith("<") and v.endswith(">")
+
+
+def unfilled_text(value: str):
+    """值未填写时返回中文说明（空值 / 占位符 / 模板参考值分开提示，与 mcpctl 的就绪判定文案一致）；已填写返回 None。
+
+    只给出命中的指纹关键词（如 example.com），不回显字段值。
+    """
+    if not value:
+        return "未填写，请填写"
+    if is_placeholder(value):
+        return "仍是占位符，需填写真实值"
+    match = TEMPLATE_VALUE_PATTERN.search(value)
+    if match:
+        return f"仍是模板参考值（特征：{match.group(0).lower()}），需替换为真实值"
+    return None
 
 
 def text(value) -> str:
@@ -91,8 +109,9 @@ def load_section() -> dict:
 
 def require_filled(section: dict, name: str, url: bool = False) -> str:
     value = text(section.get(name))
-    if not value or is_placeholder(value):
-        fail(f"统一配置 services.{KEY}.{name}（{LABELS[name]}）未填写或仍是占位符，请填写后重试。")
+    issue = unfilled_text(value)
+    if issue:
+        fail(f"统一配置 services.{KEY}.{name}（{LABELS[name]}）{issue}。")
     if url and not value.lower().startswith(("http://", "https://")):
         fail(f"统一配置 services.{KEY}.{name}（{LABELS[name]}）格式不正确：需以 http:// 或 https:// 开头。")
     return value

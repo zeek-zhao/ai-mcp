@@ -14,7 +14,8 @@
  * 顶层语句之前求值，若静态 import，环境变量会在配置注入前被读取。
  *
  * 约束：本脚本不修改上游源码，npm ci / 升级保持安全；stdout 只留给 MCP 协议，诊断信息一律写 stderr；
- * 任何输出不得包含凭证明文；占位符（<...> 形态）或空值视为未填写，拒绝启动（与 mcpctl 配置向导的就绪判定一致）。
+ * 任何输出不得包含凭证明文；空值、占位符（<...> 形态）、模板参考值（带 example.com / zhangsan / yourcompany
+ * 等指纹）都视为未填写，拒绝启动（与 mcpctl 配置向导的就绪判定一致）。
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -34,6 +35,23 @@ function fail(message) {
 
 const isPlaceholder = (v) => /^\s*<.*>\s*$/.test(v);
 const text = (v) => (v === undefined || v === null ? "" : String(v)).trim();
+// 模板参考值指纹：关键词必须与 scripts/lib/suite-config.ps1 的 $script:McpSuiteTemplateValuePattern 一致（CI 校验）
+const TEMPLATE_VALUE_PATTERN = /(example\.com|example\.net|yourcompany|zhangsan|your-name|your-company)/i;
+
+// 值未填写时返回中文说明（空值 / 占位符 / 模板参考值分开提示，与 mcpctl 的就绪判定文案一致）；已填写返回 null。
+// 只给出命中的指纹关键词（如 example.com），不回显字段值。
+function unfilledText(value) {
+  if (!value) return "未填写，请填写";
+  if (isPlaceholder(value)) return "仍是占位符，需填写真实值";
+  const hit = TEMPLATE_VALUE_PATTERN.exec(value);
+  if (hit) return `仍是模板参考值（特征：${hit[1].toLowerCase()}），需替换为真实值`;
+  return null;
+}
+
+function requireFilled(name, value) {
+  const issue = unfilledText(value);
+  if (issue) fail(`统一配置 services.${KEY}.${name}（${LABELS[name]}）${issue}。`);
+}
 
 // 读取统一配置并返回 services.jenkins 配置段；任何问题都以中文说明退出
 function loadSection() {
@@ -79,18 +97,12 @@ const baseUrl = text(section.baseUrl).replace(/\/+$/, "");
 const username = text(section.username);
 const apiToken = text(section.apiToken);
 
-if (!baseUrl || isPlaceholder(baseUrl)) {
-  fail(`统一配置 services.${KEY}.baseUrl（${LABELS.baseUrl}）未填写或仍是占位符，请填写后重试。`);
-}
+requireFilled("baseUrl", baseUrl);
 if (!/^https?:\/\//i.test(baseUrl)) {
   fail(`统一配置 services.${KEY}.baseUrl（${LABELS.baseUrl}）格式不正确：需以 http:// 或 https:// 开头。`);
 }
-if (!username || isPlaceholder(username)) {
-  fail(`统一配置 services.${KEY}.username（${LABELS.username}）未填写或仍是占位符，请填写后重试。`);
-}
-if (!apiToken || isPlaceholder(apiToken)) {
-  fail(`统一配置 services.${KEY}.apiToken（${LABELS.apiToken}）未填写或仍是占位符，请填写后重试。`);
-}
+requireFilled("username", username);
+requireFilled("apiToken", apiToken);
 
 const entry = join(here, "node_modules", "jenkins-mcp-server", "src", "server", "mcp-server.js");
 if (!existsSync(entry)) {
