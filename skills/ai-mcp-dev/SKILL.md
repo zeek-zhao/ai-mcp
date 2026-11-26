@@ -9,7 +9,7 @@ description: zeek-zhao/ai-mcp 仓库的唯一定义性开发技能。凡在本�
 |---|---|
 | 文档编号 | AI-SKILL-001 |
 | 文档名称 | AI 开发技能文件 |
-| 版本 | v1.1.0 |
+| 版本 | v1.2.0 |
 | 状态 | 生效（A） |
 | 密级 | 内部 |
 | 作者 | zeek.zhao |
@@ -73,6 +73,7 @@ Windows 本地多独立 MCP Server 套件：Gerrit / GitHub / Jenkins / Atlassia
 - 每次合并入库后在 `docs/operations/更新记录.md` 追加条目（版本倒序）。
 - 目录只能使用 `docs/00-文档管理规范.md` §3.3 已登记域目录；确需新目录先补登规范再建。
 - 版本语义化（v主.次.修）；状态流转 D → R → A；变更必记变更记录并同步台账。
+- 合并前运行 `scripts/lib/ledger-audit.ps1`（CI 同款）：台账 ↔ 文内编号 / 版本 / 状态 / 日期一致；结论未回填的验收记录不得标 `生效（A）`（只能是 `评审中（R）`）。
 
 ## 7. 安全红线
 
@@ -116,3 +117,4 @@ Windows 本地多独立 MCP Server 套件：Gerrit / GitHub / Jenkins / Atlassia
 |---|---|---|---|---|
 | v1.0.0 | 2026-11-25 | zeek.zhao | 首次建立仓库定义性开发技能文件 | 固化开发流程与约束（Issue #3） |
 | v1.1.0 | 2026-11-26 | zeek.zhao | §3 新增配置集中约束并修订模板口径；§7 安全红线与 CI 口径同步；§9 补输入结束保护、启动器与提交约定；§2 补配置字段说明 | 统一配置改造（ADR-007，T-DOC-01，Issue #57） |
+| v1.2.0 | 2026-11-26 | zeek.zhao | §6 新增合并前台账审计要求（scripts/lib/ledger-audit.ps1，CI 同款；结论未回填的验收记录不得标生效（A）） | 验收文档状态纠正（T-FIX-G，Issue #75） |

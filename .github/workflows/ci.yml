@@ -294,6 +294,17 @@ jobs:
             echo "::notice::当前 Runner 无 pwsh，跳过 PowerShell 语法解析"
           fi
 
+      # 文档台账一致性审计（规则见 docs/00-文档管理规范.md）：台账 ↔ 文内属性表的编号 / 版本 / 状态 / 日期一致；
+      # 结论未回填的验收记录不得标为「生效（A）」。与合并前本地自检使用同一脚本。
+      - name: 文档台账一致性审计（若 pwsh 可用）
+        shell: bash
+        run: |
+          if command -v pwsh >/dev/null 2>&1; then
+            pwsh -NoProfile -File ./scripts/lib/ledger-audit.ps1
+          else
+            echo "::notice::当前 Runner 无 pwsh，跳过文档台账一致性审计"
+          fi
+
       - name: 密钥扫描
         uses: gitleaks/gitleaks-action@v2
         env:
