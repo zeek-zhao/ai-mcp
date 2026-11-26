@@ -142,6 +142,7 @@ $script:McpSuiteFieldCatalog = [ordered]@{
         (New-McpSuiteField -Name 'confluenceBaseUrl' -Label 'Confluence 地址' -Kind 'url' -Required $true)
         (New-McpSuiteField -Name 'email' -Label '登录邮箱' -Kind 'text' -Required $false -RequiredWhenDeployment 'cloud')
         (New-McpSuiteField -Name 'personalAccessToken' -Label '访问令牌（Cloud 填 API Token，Server 填 PAT）' -Kind 'secret' -Required $true)
+        (New-McpSuiteField -Name 'confluencePersonalAccessToken' -Label 'Confluence 专用令牌（可选，留空则沿用访问令牌）' -Kind 'secret' -Required $false)
         (New-McpSuiteField -Name 'projectScope' -Label 'Jira 项目范围' -Kind 'list' -Required $false)
         (New-McpSuiteField -Name 'spaceScope' -Label 'Confluence 空间范围' -Kind 'list' -Required $false)
     )

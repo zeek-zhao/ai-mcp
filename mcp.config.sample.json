@@ -31,6 +31,7 @@
       "confluenceBaseUrl": "https://yourcompany.atlassian.net/wiki",
       "email": "zhangsan@company.com",
       "personalAccessToken": "<API token 或 PAT>",
+      "confluencePersonalAccessToken": "",
       "projectScope": [],
       "spaceScope": []
     }
@@ -58,6 +59,7 @@
     "services.atlassian.confluenceBaseUrl": "Cloud 必须带 /wiki，这是最常见填错点。获取方式：浏览器地址栏",
     "services.atlassian.email": "Cloud 用登录邮箱；Server 用 PAT 时留空。获取方式：你的 Atlassian 账号",
     "services.atlassian.personalAccessToken": "Cloud 填 API Token（与邮箱配对）；Server 填 Personal Access Token（Bearer）。获取方式：Cloud：id.atlassian.com → Security → API tokens；Server：Profile → Personal Access Tokens",
+    "services.atlassian.confluencePersonalAccessToken": "可选。Jira 与 Confluence 的令牌不同时才填；留空则 Confluence 沿用 personalAccessToken。Cloud 填 Confluence 用的 API Token；Server 填 Confluence 的 Personal Access Token（Bearer）。获取方式同上，在 Confluence 里生成",
     "services.atlassian.projectScope": "限制可访问的 Jira 项目 key，如 [\"PROJ\"]；留空=全部",
     "services.atlassian.spaceScope": "限制 Confluence space key，如 [\"DEV\"]；留空=全部"
   }

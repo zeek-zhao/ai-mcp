@@ -150,6 +150,10 @@
         "personalAccessToken": {
           "type": "string"
         },
+        "confluencePersonalAccessToken": {
+          "type": "string",
+          "description": "可选。Jira 与 Confluence 使用不同令牌时填写；留空则 Confluence 沿用 personalAccessToken。"
+        },
         "projectScope": {
           "type": "array",
           "items": {

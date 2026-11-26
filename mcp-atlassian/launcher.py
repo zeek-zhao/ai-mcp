@@ -11,6 +11,9 @@
     email               -> JIRA_USERNAME / CONFLUENCE_USERNAME（仅 cloud）
     personalAccessToken -> cloud：JIRA_API_TOKEN + CONFLUENCE_API_TOKEN
                            server：JIRA_PERSONAL_TOKEN + CONFLUENCE_PERSONAL_TOKEN
+    confluencePersonalAccessToken（可选）
+                         -> 仅作用于 Confluence：cloud 写入 CONFLUENCE_API_TOKEN，server 写入 CONFLUENCE_PERSONAL_TOKEN；
+                            留空时 Confluence 沿用 personalAccessToken
     projectScope[]      -> JIRA_PROJECTS_FILTER（逗号分隔）
     spaceScope[]        -> CONFLUENCE_SPACES_FILTER（逗号分隔）
 
@@ -40,6 +43,7 @@ LABELS = {
     "confluenceBaseUrl": "Confluence 地址",
     "email": "登录邮箱",
     "personalAccessToken": "访问令牌（Cloud 填 API Token，Server 填 PAT）",
+    "confluencePersonalAccessToken": "Confluence 专用令牌（可选，留空则沿用访问令牌）",
 }
 
 
@@ -127,6 +131,17 @@ def require_filled(section: dict, name: str, url: bool = False) -> str:
     return value
 
 
+def optional_filled(section: dict, name: str) -> str:
+    """可选字段：未填写返回空串；填了占位符或模板参考值则拒绝启动（与必填字段同一套文案）。"""
+    value = text(section.get(name))
+    if not value:
+        return ""
+    issue = unfilled_text(value)
+    if issue:
+        fail(f"统一配置 services.{KEY}.{name}（{LABELS[name]}）{issue}，或清空以沿用 personalAccessToken。")
+    return value
+
+
 def main() -> None:
     # 管道 / 重定向下按 UTF-8 输出中文诊断（否则 Windows 默认用本地代码页，Host 侧会乱码）
     for stream in (sys.stdout, sys.stderr):
@@ -142,6 +157,8 @@ def main() -> None:
     jira_url = require_filled(section, "jiraBaseUrl", url=True).rstrip("/")
     conf_url = require_filled(section, "confluenceBaseUrl", url=True).rstrip("/")
     token = require_filled(section, "personalAccessToken")
+    # Confluence 专用令牌（可选）：留空则沿用访问令牌
+    confluence_token = optional_filled(section, "confluencePersonalAccessToken") or token
 
     os.environ["JIRA_URL"] = jira_url
     os.environ["CONFLUENCE_URL"] = conf_url
@@ -150,13 +167,13 @@ def main() -> None:
         os.environ["JIRA_USERNAME"] = email
         os.environ["CONFLUENCE_USERNAME"] = email
         os.environ["JIRA_API_TOKEN"] = token
-        os.environ["CONFLUENCE_API_TOKEN"] = token
+        os.environ["CONFLUENCE_API_TOKEN"] = confluence_token
         # 同一进程里不残留另一种部署类型的变量，避免切换部署类型后互相干扰
         for name in ("JIRA_PERSONAL_TOKEN", "CONFLUENCE_PERSONAL_TOKEN"):
             os.environ.pop(name, None)
     else:
         os.environ["JIRA_PERSONAL_TOKEN"] = token
-        os.environ["CONFLUENCE_PERSONAL_TOKEN"] = token
+        os.environ["CONFLUENCE_PERSONAL_TOKEN"] = confluence_token
         for name in ("JIRA_USERNAME", "CONFLUENCE_USERNAME", "JIRA_API_TOKEN", "CONFLUENCE_API_TOKEN"):
             os.environ.pop(name, None)
 
