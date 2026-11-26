@@ -29,6 +29,7 @@ function Show-McpMenu {
     Write-Host '=============================================='
     Write-Host '        MCP 服务总控（mcpctl）'
     Write-Host ('        仓库：' + (Get-McpRepoRoot))
+    Write-Host ('        [根路径] ' + (Get-McpRepoRootSourceText))
     Write-Host '  模型：服务由 Host 按需 stdio 拉起，本工具只做治理'
     Write-Host '=============================================='
     Write-Host '  [1] 服务诊断与自检（含握手探活入口）'
@@ -209,5 +210,16 @@ function Invoke-McpctlMenu {
 
 # 直接运行时进入菜单；被 dot-source 时不触发
 if ($MyInvocation.InvocationName -ne '.') {
+    # 环境变量 MCP_SUITE_ROOT 已设置但无效：不回退到脚本位置，打印原因后退出（T-ENV-01）
+    $mcpRootIssue = Get-McpRepoRootIssue
+    if ($mcpRootIssue) {
+        Write-Host '=============================================='
+        Write-Host '        MCP 服务总控（mcpctl）'
+        Write-Host '=============================================='
+        Write-Host '  [根路径] 环境变量 MCP_SUITE_ROOT 无效，未回退到脚本位置：'
+        Write-Host ('    ' + $mcpRootIssue)
+        Write-Host '    说明：setx 只对之后新开的窗口生效；当前窗口可先执行 Remove-Item Env:\MCP_SUITE_ROOT'
+        exit 1
+    }
     Invoke-McpctlMenu
 }

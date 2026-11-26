@@ -374,12 +374,44 @@ jobs:
                   elif literal not in launcher_path.read_text(encoding="utf-8-sig"):
                       fail(f"{launcher} 的模板参考值指纹与 suite-config.ps1 不一致：应包含字面量 {literal}")
 
+          # 第 5 段（T-ENV-01）：仓库根路径环境变量 MCP_SUITE_ROOT 的报错文案，在 registry.ps1 与四个启动器之间逐字一致。
+          # 占位符写法不同（PowerShell 用 {0}/{1}，Python 用 {root_env}/{ROOT_CLEAR_COMMAND}，Node 用 ${rootEnv}/${ROOT_CLEAR_COMMAND}），比对前统一归一化。
+          def normalize_placeholders(text):
+              return re.sub(r"\$\{[^{}]*\}|\{[^{}]*\}", "{}", text)
+
+          def root_message_texts(text):
+              return [normalize_placeholders(m.group(0)) for m in re.finditer(r"环境变量 MCP_SUITE_ROOT [^\"'`\n]*", text)]
+
+          registry_text = Path("scripts/lib/registry.ps1").read_text(encoding="utf-8-sig")
+          root_messages = []
+          for var_name in ("McpRepoRootNotAbsolutePattern", "McpRepoRootNotRepoPattern"):
+              match = re.search(r"\$script:" + var_name + r"\s*=\s*'([^']*)'", registry_text)
+              if not match:
+                  fail(f"scripts/lib/registry.ps1 缺少 $script:{var_name}（环境变量 MCP_SUITE_ROOT 的报错文案）")
+              else:
+                  root_messages.append(normalize_placeholders(match.group(1)))
+          root_clear = re.search(r"\$script:McpRepoRootClearCommand\s*=\s*'([^']*)'", registry_text)
+          if not root_clear or root_clear.group(1) != 'setx MCP_SUITE_ROOT ""':
+              fail('scripts/lib/registry.ps1 的 $script:McpRepoRootClearCommand 应为 setx MCP_SUITE_ROOT ""（清除环境变量的命令）')
+          for message in root_messages:
+              if not message.startswith("环境变量 MCP_SUITE_ROOT ") or not message.endswith("。请改为正确的仓库根目录，或清除该变量后重试：{}"):
+                  fail(f"环境变量 MCP_SUITE_ROOT 的报错文案应以「环境变量 MCP_SUITE_ROOT 」开头、以固定的修复提示结尾：{message}")
+          for launcher in ("mcp-gerrit/launcher.py", "mcp-atlassian/launcher.py", "mcp-github/launcher.mjs", "mcp-jenkins/launcher.mjs"):
+              launcher_path = Path(launcher)
+              if not launcher_path.is_file():
+                  fail(f"缺少 {launcher}")
+                  continue
+              launcher_texts = root_message_texts(launcher_path.read_text(encoding="utf-8-sig"))
+              for message in root_messages:
+                  if message not in launcher_texts:
+                      fail(f"{launcher} 的根路径环境变量（MCP_SUITE_ROOT）报错文案与 scripts/lib/registry.ps1 不一致（归一化占位符后应包含：{message}）")
+
           for message in errors:
               print(f"::error::{message}")
           if errors:
               print(f"统一配置校验失败：共 {len(errors)} 项问题")
               sys.exit(1)
-          print(f"统一配置校验通过：{len(field_paths)} 个字段均有中文提示；Schema 必填集合与契约一致；sample 通过 Schema 校验；模板参考值均被指纹覆盖，四个启动器指纹一致")
+          print(f"统一配置校验通过：{len(field_paths)} 个字段均有中文提示；Schema 必填集合与契约一致；sample 通过 Schema 校验；模板参考值均被指纹覆盖，四个启动器指纹一致；根路径环境变量报错文案一致")
           PY
 
       - name: 旧配置引用检查
@@ -410,6 +442,10 @@ jobs:
             done
             # 注册表自检：必填字段齐全、ConfigKey 唯一且与 mcp.config.sample.json 的 services 键一致
             pwsh -NoProfile -Command ". ./scripts/lib/registry.ps1; \$problems = @(Test-McpRegistry); if (\$problems.Count -gt 0) { \$problems | ForEach-Object { Write-Host \"::error::\$_\" }; exit 1 }; Write-Host '注册表自检通过'"
+            # 根路径环境变量自检（T-ENV-01）：未设置 → 由脚本位置推断；设为仓库根 → 取自环境变量；设错 → 报错且不回退
+            pwsh -NoProfile -Command ". ./scripts/lib/registry.ps1; if (\$env:MCP_SUITE_ROOT -or (Get-McpRepoRoot) -ne (Get-Location).Path -or (Get-McpRepoRootSourceText) -ne '由脚本位置推断' -or (Get-McpRepoRootIssue)) { Write-Host '::error::未设置 MCP_SUITE_ROOT 时，根路径应由脚本位置推断'; exit 1 }"
+            pwsh -NoProfile -Command "\$env:MCP_SUITE_ROOT = (Get-Location).Path; . ./scripts/lib/registry.ps1; if ((Get-McpRepoRoot) -ne (Get-Location).Path -or (Get-McpRepoRootSourceText) -ne '来自环境变量 MCP_SUITE_ROOT' -or (Get-McpRepoRootIssue)) { Write-Host '::error::MCP_SUITE_ROOT 设为仓库根时，根路径应取自环境变量'; exit 1 }"
+            pwsh -NoProfile -Command "\$env:MCP_SUITE_ROOT = \$env:RUNNER_TEMP; . ./scripts/lib/registry.ps1; \$issue = Get-McpRepoRootIssue; if (-not \$issue -or -not \$issue.Contains('指向的目录不是本仓库根')) { Write-Host '::error::MCP_SUITE_ROOT 设错时应报告无效'; exit 1 }; \$threw = \$false; try { \$null = Get-McpRepoRoot } catch { \$threw = \$true }; if (-not \$threw) { Write-Host '::error::MCP_SUITE_ROOT 设错时 Get-McpRepoRoot 应报错，而不是静默回退'; exit 1 }; Write-Host '根路径环境变量自检通过'"
           else
             echo "::notice::当前 Runner 无 pwsh，跳过 PowerShell 语法解析"
           fi

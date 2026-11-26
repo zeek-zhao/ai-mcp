@@ -2,7 +2,9 @@
 """mcp-atlassian 本地启动器（模型一：由 Host 按需 stdio 拉起，本进程生命周期完全由 Host 管理）。
 
 配置来源：仓库根统一配置 mcp.config.json 的 services.atlassian 配置段。
-    路径优先取环境变量 MCP_SUITE_CONFIG（绝对路径），未设置时回退到 <本服务目录>/../mcp.config.json。
+    路径优先取环境变量 MCP_SUITE_CONFIG（绝对路径）；其次取环境变量 MCP_SUITE_ROOT（仓库根目录）下的
+    mcp.config.json；两者都未设置时回退到 <本服务目录>/../mcp.config.json。
+    MCP_SUITE_ROOT 已设置但无效时报错退出、不回退（判定与文案与 scripts/lib/registry.ps1 一致）。
 
 字段映射（环境变量名以 mcp-atlassian==0.23.1 为准；升级上游后必须重新核对其 README 与 config.py）：
     deployment          -> cloud：登录邮箱 + API Token；server：个人访问令牌（PAT）
@@ -88,9 +90,28 @@ def as_csv(values) -> str:
     return ",".join(str(v).strip() for v in values if str(v).strip())
 
 
-def load_section() -> dict:
+ROOT_ENV_NAME = "MCP_SUITE_ROOT"
+ROOT_CLEAR_COMMAND = 'setx MCP_SUITE_ROOT ""'
+
+
+def resolve_config_path() -> Path:
+    """定位统一配置：MCP_SUITE_CONFIG > MCP_SUITE_ROOT/mcp.config.json > <本服务目录>/../mcp.config.json。"""
     override = os.environ.get("MCP_SUITE_CONFIG", "").strip()
-    config_path = Path(override) if override else HERE.parent / "mcp.config.json"
+    if override:
+        return Path(override)
+    root_env = os.environ.get(ROOT_ENV_NAME, "").strip()
+    if root_env:
+        # 与 scripts/lib/registry.ps1 的判定和报错文案保持逐字一致；无效时不回退
+        if not os.path.isabs(root_env):
+            fail(f"环境变量 MCP_SUITE_ROOT 必须是仓库根目录的绝对路径，当前为：{root_env}。请改为正确的仓库根目录，或清除该变量后重试：{ROOT_CLEAR_COMMAND}")
+        if not (Path(root_env) / "scripts" / "mcpctl.config.ps1").is_file():
+            fail(f"环境变量 MCP_SUITE_ROOT 指向的目录不是本仓库根（缺少 scripts/mcpctl.config.ps1）：{root_env}。请改为正确的仓库根目录，或清除该变量后重试：{ROOT_CLEAR_COMMAND}")
+        return Path(root_env) / "mcp.config.json"
+    return HERE.parent / "mcp.config.json"
+
+
+def load_section() -> dict:
+    config_path = resolve_config_path()
     if not config_path.is_file():
         fail(
             f"统一配置文件不存在：{config_path}\n"
