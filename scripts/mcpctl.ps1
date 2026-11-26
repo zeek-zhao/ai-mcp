@@ -12,17 +12,19 @@
       5. 初始化运行环境 Bootstrap（M4：检查 / 初始化 / 重建）
       6. 导出 Host 配置（stdio 配置片段写入仓库外本地文件，不含明文凭证；条目带 env.MCP_SUITE_CONFIG，已禁用的服务不导出）
       7. 登录预检与环境自愈（检查运行时 / 依赖环境 / 配置 / 启动命令并给出修复命令；自愈需确认或配置允许）
+      8. 生成 Magpie 路由配置（按注册表生成本机 gateway.routes.json，不入库；生成后自检并打印登记命令）
     MCP 服务本体由 Host（Cursor / Claude Desktop 等）按需 stdio 拉起，
     mcpctl 不启动、不停止、不托管服务进程。
 
     运行：pwsh / powershell 下执行 scripts\mcpctl.ps1。
 #>
 
-# 加载核心库（注册表 / 统一配置 / 配置向导 / 诊断与遗留进程治理 / Bootstrap / 登录预检）
+# 加载核心库（注册表 / 统一配置 / 配置向导 / 诊断与遗留进程治理 / Bootstrap / 登录预检 / 网关路由生成）
 . (Join-Path -Path $PSScriptRoot -ChildPath 'lib\service-utils.ps1')
 . (Join-Path -Path $PSScriptRoot -ChildPath 'lib\config-wizard.ps1')
 . (Join-Path -Path $PSScriptRoot -ChildPath 'bootstrap.ps1')
 . (Join-Path -Path $PSScriptRoot -ChildPath 'autostart.ps1')
+. (Join-Path -Path $PSScriptRoot -ChildPath 'lib\gateway-routes.ps1')
 
 function Show-McpMenu {
     Clear-Host
@@ -39,6 +41,7 @@ function Show-McpMenu {
     Write-Host '  [5] 初始化运行环境（Bootstrap：检查 / 初始化 / 重建）'
     Write-Host '  [6] 导出 Host 配置（stdio 片段，本地文件）'
     Write-Host '  [7] 登录预检与环境自愈（不拉起 MCP 进程）'
+    Write-Host '  [8] 生成 Magpie 路由配置（本地 gateway.routes.json，不入库）'
     Write-Host '  [0] 退出'
     Write-Host '----------------------------------------------'
 }
@@ -124,10 +127,75 @@ function Invoke-McpHostConfigExport {
     Write-McpOpsLog -Action '导出Host配置' -Service '-' -Detail ("导出 {0} 个服务、跳过已禁用 {1} 个 → {2}" -f $servers.Count, $skipped.Count, $target)
 }
 
+<#
+.SYNOPSIS
+    生成 Magpie 网关路由配置 gateway.routes.json（T-ENV-02）。
+
+.DESCRIPTION
+    按注册表 StartCommand 生成本机路由（含本机绝对路径，已被 .gitignore 排除，不入库），生成后自检，
+    并打印登记到 Magpie 的命令。文件已存在时先报告它与注册表的差异，再选择 覆盖 / 另存为带时间戳的副本 / 取消。
+#>
+function Invoke-McpGatewayRoutesExport {
+    $root = Get-McpRepoRoot
+    $target = Join-Path $root $script:McpGatewayFileName
+    try {
+        $routes = New-McpGatewayRoutes -Root $root
+    }
+    catch {
+        Write-Host ('生成网关路由失败：' + $_.Exception.Message)
+        return 1
+    }
+    $problems = @(Test-McpGatewayRoutes -Routes $routes -Root $root)
+    if ($problems.Count -gt 0) {
+        Write-Host '生成结果自检未通过，未写入任何文件：'
+        foreach ($p in $problems) { Write-Host ('  - ' + $p) }
+        return 1
+    }
+    if (Test-Path -LiteralPath $target -PathType Leaf) {
+        $diff = @(Compare-McpGatewayRoutesFile -Path $target -Root $root)
+        if ($diff.Count -eq 0) {
+            Write-Host ('现有 {0} 与注册表一致。' -f $script:McpGatewayFileName)
+        }
+        else {
+            Write-Host ('现有 {0} 与注册表不一致（重新生成即可修正）：' -f $script:McpGatewayFileName)
+            foreach ($d in $diff) { Write-Host ('  - ' + $d) }
+        }
+        Write-Host '  [1] 覆盖  [2] 另存为带时间戳的副本（gateway.routes.<时间戳>.json）  [3] 取消'
+        $mode = Read-Host '请选择操作 [1-3]'
+        if ($null -eq $mode) { Write-Host '输入已关闭，未写入。'; return 1 }
+        switch ($mode.Trim()) {
+            '1' { }
+            '2' { $target = Join-Path $root ('gateway.routes.{0}.json' -f (Get-Date -Format 'yyyyMMdd-HHmmss')) }
+            default { Write-Host '已取消。'; return 1 }
+        }
+    }
+    try {
+        $null = Save-McpGatewayRoutes -Routes $routes -Path $target
+    }
+    catch {
+        Write-Host ('写入网关路由失败：' + $_.Exception.Message)
+        return 1
+    }
+    Write-Host ''
+    Write-Host ('已生成 Magpie 路由配置：{0}' -f $target)
+    Write-Host '  含本机绝对路径，已被 .gitignore 排除，不得提交；凭证不在本文件，仍只在统一配置 mcp.config.json。'
+    Write-Host '登记到 Magpie（在终端逐条执行；--local 表示仅本机）：'
+    foreach ($line in (Get-McpGatewayRegisterCommands -Routes $routes)) { Write-Host ('  ' + $line) }
+    Write-Host '分派给 agent（按需替换 agent 列表）：magpie library mcp agents <服务名> <agent1,agent2…>'
+    Write-Host '  若提示 the library already has a server called …：该服务已在库中；要按新生成的内容覆盖，先执行 magpie library mcp rm <服务名>，再执行上面的登记命令（重新登记后需重新分派 agent）。'
+    Write-Host '在界面手工录入时按下面字段对照（与生成的文件内容相同）：'
+    foreach ($name in $routes['mcpServers'].Keys) {
+        $entry = $routes['mcpServers'][$name]
+        Write-Host ('  {0}：传输=stdio；命令={1}；参数={2}；环境变量 {3}={4}' -f $name, $entry['command'], (@($entry['args']) -join ' '), $script:McpGatewayConfigEnvName, $entry['env'][$script:McpGatewayConfigEnvName])
+    }
+    Write-McpOpsLog -Action '生成Magpie路由' -Service '-' -Detail ('写入 {0}（{1} 个服务）' -f (Split-Path -Leaf $target), $routes['mcpServers'].Count)
+    return 0
+}
+
 function Invoke-McpctlMenu {
     while ($true) {
         Show-McpMenu
-        $choice = Read-Host '请选择操作 [0-7]'
+        $choice = Read-Host '请选择操作 [0-8]'
         if ($null -eq $choice) {
             # 标准输入已结束（例如被脚本调用且输入耗尽）：Read-Host 返回 $null，直接退出，避免菜单空转
             Write-Host '输入已关闭，退出 mcpctl。'
@@ -198,6 +266,9 @@ function Invoke-McpctlMenu {
                         default { Write-Host '已取消。' }
                     }
                 }
+            }
+            '8' {
+                $null = Invoke-McpGatewayRoutesExport
             }
             '0' { return }
             default { Write-Host '输入无效，请重新选择。' }

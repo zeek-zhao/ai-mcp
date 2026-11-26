@@ -3,7 +3,7 @@
 | 文档编号 | DOC-HOST-001 |
 |---|---|
 | 文档名称 | Host 接入配置 |
-| 版本 | v0.7.0 |
+| 版本 | v0.8.0 |
 | 状态 | 生效（A） |
 | 密级 | 内部 |
 | 作者 | zeek.zhao |
@@ -97,19 +97,19 @@ Magpie（本机 MCP 网关，Windows 原生托盘程序）可以作为四个服�
 
 ### 4.1 四条路由
 
-仓库根的 `gateway.routes.sample.json` 是路由样例（`<仓库根>` 为占位符，不含凭证与本机信息）；四条 `command` / `args` 与 `scripts/mcpctl.config.ps1` 的 `StartCommand` 一致，由 CI 校验（启动命令变更时样例必须同步）。登记时把 `<仓库根>` 换成本机仓库绝对路径：
+仓库根的 `gateway.routes.sample.json` 是路由样例（`${MCP_SUITE_ROOT}` 为仓库根占位符，不含凭证与本机信息）；四条 `command` / `args` 与 `scripts/mcpctl.config.ps1` 的 `StartCommand` 一致，由 CI 校验（启动命令变更时样例必须同步）。**推荐用菜单 8 生成本机版本**（见 4.6）；手工登记时把 `${MCP_SUITE_ROOT}` 换成本机仓库绝对路径：
 
 | 服务名（固定，不加前缀） | command | args | env |
 |---|---|---|---|
-| `Gerrit` | `<仓库根>\mcp-gerrit\venv\Scripts\python.exe` | `<仓库根>\mcp-gerrit\launcher.py` | `MCP_SUITE_CONFIG=<仓库根>\mcp.config.json` |
-| `GitHub` | `node` | `<仓库根>\mcp-github\launcher.mjs` | 同上 |
-| `Jenkins` | `node` | `<仓库根>\mcp-jenkins\launcher.mjs` | 同上 |
-| `Atlassian` | `<仓库根>\mcp-atlassian\venv\Scripts\python.exe` | `<仓库根>\mcp-atlassian\launcher.py` | 同上 |
+| `Gerrit` | `${MCP_SUITE_ROOT}\mcp-gerrit\venv\Scripts\python.exe` | `${MCP_SUITE_ROOT}\mcp-gerrit\launcher.py` | `MCP_SUITE_CONFIG=${MCP_SUITE_ROOT}\mcp.config.json` |
+| `GitHub` | `node` | `${MCP_SUITE_ROOT}\mcp-github\launcher.mjs` | 同上 |
+| `Jenkins` | `node` | `${MCP_SUITE_ROOT}\mcp-jenkins\launcher.mjs` | 同上 |
+| `Atlassian` | `${MCP_SUITE_ROOT}\mcp-atlassian\venv\Scripts\python.exe` | `${MCP_SUITE_ROOT}\mcp-atlassian\launcher.py` | 同上 |
 
-登记方式：在 Magpie 界面的 Library → MCP 中逐条录入，或用命令行等价登记（以 Gerrit 为例，其余三条同理）：
+登记方式：在 Magpie 界面的 Library → MCP 中逐条录入，或用命令行等价登记（以 Gerrit 为例，其余三条同理；`<仓库根>` 处填真实绝对路径）：
 
 ```
-magpie library mcp add Gerrit <仓库根>\mcp-gerrit\venv\Scripts\python.exe <仓库根>\mcp-gerrit\launcher.py env=MCP_SUITE_CONFIG=<仓库根>\mcp.config.json --local
+magpie library mcp add Gerrit --local "env=MCP_SUITE_CONFIG=<仓库根>\mcp.config.json" -- "<仓库根>\mcp-gerrit\venv\Scripts\python.exe" "<仓库根>\mcp-gerrit\launcher.py"
 magpie library mcp agents Gerrit <agent1,agent2,…>
 ```
 
@@ -150,6 +150,23 @@ magpie library mcp agents Gerrit <agent1,agent2,…>
 - 直连配置用 `scripts/mcpctl.ps1` 菜单 6 导出（第 2 节结构）。
 - 同一个 agent 不要对同一服务同时启用网关与直连，否则会出现两套同类工具。
 
+### 4.6 用菜单 8 生成本机路由
+
+`scripts/mcpctl.ps1` 菜单 **8. 生成 Magpie 路由配置** 从注册表（`scripts/mcpctl.config.ps1` 的 `StartCommand`）生成本机可用的路由文件，唯一实现是 `scripts/lib/gateway-routes.ps1`：
+
+- 生成位置：仓库根 `gateway.routes.json`（含本机绝对路径，已被 `.gitignore` 排除，不得提交）；UTF-8 无 BOM、2 空格缩进；顶层只有 `mcpServers`，服务名固定为 `Gerrit` / `GitHub` / `Jenkins` / `Atlassian`；`env` 只有 `MCP_SUITE_CONFIG`。
+- 根路径取自 `Get-McpRepoRoot`（支持 `MCP_SUITE_ROOT`，见第 0 节）；仓库挪位置后重新生成即可，两份结果只有路径不同。
+- 已存在 `gateway.routes.json` 时：先与注册表比对并报告差异（例如手工改坏的 `args`），再选择 `[1] 覆盖` / `[2] 另存为 gateway.routes.<时间戳>.json` / `[3] 取消`；时间戳副本同样被 `.gitignore` 排除。
+- 写入前自检：四条路由必须与注册表 `StartCommand` 逐项一致，且不得出现凭证类字样；自检不过则列出原因、不写文件。
+- 生成后屏幕打印：文件路径、四条可直接粘贴到终端的登记命令（形式同 4.1，路径为真实路径）、`magpie library mcp agents` 分派提示、界面录入字段对照。
+
+登记命令已在 Magpie 0.1.4572 上实测：逐条执行后四个服务可经网关调用（2026-11-26）。注意两点：
+
+- Magpie 不允许重名登记——提示 `the library already has a server called …` 时，先 `magpie library mcp rm <服务名>` 再执行登记命令。
+- 重新登记后默认不分派 agent，需重新执行 `magpie library mcp agents <服务名> <agent,…>`。
+
+关于 `${MCP_SUITE_ROOT}`：样例里用它作仓库根占位符。**登记阶段** Magpie 原样保存、不展开（2026-11-26 实测：`magpie library mcp show` 显示的 `env.MCP_SUITE_CONFIG` 仍是 `${MCP_SUITE_ROOT}\mcp.config.json`）；**运行时**是否展开＝**待实测**，验证步骤：登记一条带 `${MCP_SUITE_ROOT}` 的探针条目 → 退出并重启 Magpie 托盘使其重新加载 → 经网关调用该探针服务；能完成握手说明已展开，报「统一配置文件不存在」说明未展开。在验证完成之前一律用菜单 8 生成的真实路径。另注意在 PowerShell 里双引号中的 `${MCP_SUITE_ROOT}` 会被 shell 先行展开（变量未设置时变成空串），手工执行含该写法的命令时请用 cmd.exe 或把参数写成单引号。
+
 ## 变更记录
 
 | 版本 | 日期 | 变更人 | 变更摘要 | 原因/关联条目 |
@@ -161,3 +178,4 @@ magpie library mcp agents Gerrit <agent1,agent2,…>
 | v0.5.0 | 2026-11-26 | zeek.zhao | 验证清单「Host 退出后无残留进程」的复核方法更正：总控的遗留进程检测基于 PID 文件，不覆盖 Host 拉起的进程，改为引用端到端验收清单的进程观察命令 | 与实现对齐（T-VER-03，Issue #71） |
 | v0.6.0 | 2026-11-26 | zeek.zhao | 新增第 4 节「Magpie 网关模式（可选）」：四条路由与登记方式、按需行为实测（按服务懒启动、会话结束后空闲约 10 分钟回收）、客户端密钥分组授权建议（尚未创建）、工具命名与回退直连方法 | Magpie 网关接入（TASK-PROXY-01，ADR-008，Issue #85） |
 | v0.7.0 | 2026-11-26 | zeek.zhao | 新增第 0 节「路径解析优先级」：`MCP_SUITE_CONFIG` > `MCP_SUITE_ROOT` > 脚本位置推断；`MCP_SUITE_ROOT` 无效时不回退、两句报错原文与清除命令；设置方法、生效确认与 CI 校验说明 | 环境变量与工作流（T-ENV-01，Issue #89） |
+| v0.8.0 | 2026-11-26 | zeek.zhao | 新增 4.6「用菜单 8 生成本机路由」：生成位置与格式、已存在时的三种选择、写入前自检、四条登记命令（Magpie 不允许重名登记、重新登记后需重新分派 agent）、`${MCP_SUITE_ROOT}` 登记阶段不展开的实测结论与运行时验证步骤；4.1 样例占位符改为 `${MCP_SUITE_ROOT}`，登记命令改为实测可用的写法 | 环境变量与工作流（T-ENV-02） |

@@ -214,6 +214,27 @@ function Get-McpServiceById {
 
 <#
 .SYNOPSIS
+    获取某服务在注册表中的原始 StartCommand（仓库相对路径数组，不做路径归一化）。
+
+.DESCRIPTION
+    供需要「按另一个仓库根重新拼路径」的调用方使用（如网关路由生成，T-ENV-02）；
+    服务不存在时返回 $null。
+
+.OUTPUTS
+    System.String[]
+#>
+function Get-McpRawStartCommand {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Id)
+
+    foreach ($svc in $script:McpServices) {
+        if ($svc.Id -eq $Id.ToLowerInvariant()) { return @($svc.StartCommand | ForEach-Object { "$_" }) }
+    }
+    return $null
+}
+
+<#
+.SYNOPSIS
     校验注册表数据完整性（自检用）。
 
 .DESCRIPTION

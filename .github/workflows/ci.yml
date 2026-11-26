@@ -90,7 +90,8 @@ jobs:
               "mcp-jenkins": "Jenkins",
               "mcp-atlassian": "Atlassian",
           }
-          PLACEHOLDER = "<仓库根>"
+          # 样例中的仓库根占位符（T-ENV-02）：由 mcpctl 菜单 8 生成 gateway.routes.json 时替换为本机绝对路径
+          PLACEHOLDER = "${MCP_SUITE_ROOT}"
           CONFIG_NAME = "mcp.config.json"
           # 凭证类字样（不分大小写）：写成拼接形式，避免本步骤自身的源码被当作命中
           FORBIDDEN = ("token", "pat", "pa" + "ssword", "secret", "api" + "key")
@@ -119,7 +120,7 @@ jobs:
               elif service_id not in SERVER_NAMES:
                   fail(f"注册表新增了服务 {service_id}，须同步登记到本步骤的 SERVER_NAMES 与 gateway.routes.sample.json")
 
-          # 2) 样例结构：顶层只有 mcpServers；服务名恰为四条，且与注册表一一对应
+          # 2) 样例结构：顶层只有 _comment 与 mcpServers；服务名恰为四条，且与注册表一一对应
           sample = None
           if sample_path.is_file():
               try:
@@ -128,9 +129,12 @@ jobs:
                   fail(f"gateway.routes.sample.json 不是合法 JSON（{exc.__class__.__name__}）")
           servers = {}
           if sample is not None:
-              if not isinstance(sample, dict) or list(sample) != ["mcpServers"]:
-                  fail("gateway.routes.sample.json 的顶层必须只有 mcpServers 一个键")
+              if not isinstance(sample, dict) or "mcpServers" not in sample or [key for key in sample if key not in ("_comment", "mcpServers")]:
+                  fail("gateway.routes.sample.json 的顶层只能有 _comment 与 mcpServers 两个键")
               else:
+                  comment = sample.get("_comment")
+                  if not isinstance(comment, str) or PLACEHOLDER not in comment:
+                      fail(f"gateway.routes.sample.json 的 _comment 必须是说明占位符 {PLACEHOLDER} 的字符串")
                   servers = sample.get("mcpServers")
                   if not isinstance(servers, dict):
                       fail("gateway.routes.sample.json 的 mcpServers 必须是对象")
@@ -140,7 +144,7 @@ jobs:
               fail(f"gateway.routes.sample.json 的服务名 {sorted(servers)} 与注册表对应的服务名 {expected_names} 不一致（服务名固定，不加前缀）")
 
           def to_sample_path(relative):
-              # 仓库相对路径 -> 样例中的写法：<仓库根>\<相对路径>（统一为反斜杠）
+              # 仓库相对路径 -> 样例中的写法：${MCP_SUITE_ROOT}\<相对路径>（统一为反斜杠）
               return PLACEHOLDER + "\\" + relative.replace("/", "\\")
 
 
@@ -168,13 +172,13 @@ jobs:
                   if extra:
                       fail(f"gateway.routes.sample.json 中 {name} 含未约定的键 {extra}（只允许 command / args / env）")
 
-          # 4) 样例中不得出现凭证类字样，也不得出现本机绝对路径（样例只保留 <仓库根> 占位符）
+          # 4) 样例中不得出现凭证类字样，也不得出现本机绝对路径（样例只保留 ${MCP_SUITE_ROOT} 占位符）
           lowered = sample_text.lower()
           for word in FORBIDDEN:
               if word in lowered:
                   fail(f"gateway.routes.sample.json 出现了不应出现的字样“{word}”（网关配置里不得出现凭证类字样）")
           if re.search(r"(?<![a-z])[a-z]:[\\/]", lowered):
-              fail("gateway.routes.sample.json 出现了本机绝对路径（应保持 <仓库根> 占位符；填入真实路径的版本保存为 gateway.routes.json，已被 .gitignore 排除）")
+              fail(f"gateway.routes.sample.json 出现了本机绝对路径（应保持 {PLACEHOLDER} 占位符；填入真实路径的版本保存为 gateway.routes.json，已被 .gitignore 排除）")
 
           for message in errors:
               print(f"::error::{message}")
@@ -448,6 +452,48 @@ jobs:
             pwsh -NoProfile -Command "\$env:MCP_SUITE_ROOT = \$env:RUNNER_TEMP; . ./scripts/lib/registry.ps1; \$issue = Get-McpRepoRootIssue; if (-not \$issue -or -not \$issue.Contains('指向的目录不是本仓库根')) { Write-Host '::error::MCP_SUITE_ROOT 设错时应报告无效'; exit 1 }; \$threw = \$false; try { \$null = Get-McpRepoRoot } catch { \$threw = \$true }; if (-not \$threw) { Write-Host '::error::MCP_SUITE_ROOT 设错时 Get-McpRepoRoot 应报错，而不是静默回退'; exit 1 }; Write-Host '根路径环境变量自检通过'"
           else
             echo "::notice::当前 Runner 无 pwsh，跳过 PowerShell 语法解析"
+          fi
+
+      # 网关路由生成器自检（T-ENV-02）：用真实生成器按仓库根生成路由，自检通过且与样例（占位符 ${MCP_SUITE_ROOT}）逐条一致，
+      # 防止样例手抄与生成器、注册表之间漂移。临时脚本写在 RUNNER_TEMP，不进工作区。
+      - name: 网关路由生成器自检（若 pwsh 可用）
+        shell: bash
+        run: |
+          if command -v pwsh >/dev/null 2>&1; then
+            cat > "$RUNNER_TEMP/mcp-gateway-selfcheck.ps1" <<'PS1'
+          $ErrorActionPreference = 'Stop'
+          . ./scripts/lib/gateway-routes.ps1
+          $root = (Get-Location).Path
+          $placeholder = '${MCP_SUITE_ROOT}'
+          $routes = New-McpGatewayRoutes -Root $root
+          $problems = @(Test-McpGatewayRoutes -Routes $routes -Root $root)
+          if ($problems.Count -gt 0) { $problems | ForEach-Object { Write-Host "::error::$_" }; exit 1 }
+          $sample = [IO.File]::ReadAllText((Join-Path $root 'gateway.routes.sample.json')) | ConvertFrom-Json
+          function ConvertTo-SampleItem([string]$Text) {
+              if ($Text.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { return $placeholder + $Text.Substring($root.Length) }
+              return $Text
+          }
+          $names = @($sample.mcpServers.PSObject.Properties.Name)
+          if (@(Compare-Object @($routes['mcpServers'].Keys) $names).Count -gt 0) {
+              Write-Host "::error::生成的路由服务名与样例不一致：$($routes['mcpServers'].Keys -join '、') 对比 $($names -join '、')"
+              exit 1
+          }
+          foreach ($name in $routes['mcpServers'].Keys) {
+              $entry = $routes['mcpServers'][$name]
+              $want = $sample.mcpServers.$name
+              $command = ConvertTo-SampleItem $entry['command']
+              $argList = @($entry['args'] | ForEach-Object { ConvertTo-SampleItem $_ })
+              $configPath = ConvertTo-SampleItem $entry['env']['MCP_SUITE_CONFIG']
+              if ($command -ne $want.command -or ($argList -join '|') -ne (@($want.args) -join '|') -or $configPath -ne $want.env.MCP_SUITE_CONFIG) {
+                  Write-Host "::error::生成的 $name 路由与样例不一致（command / args / env.MCP_SUITE_CONFIG；样例使用占位符 $placeholder）"
+                  exit 1
+              }
+          }
+          Write-Host "网关路由生成器自检通过：$($routes['mcpServers'].Count) 条路由与注册表一致，并与样例逐条一致"
+          PS1
+            pwsh -NoProfile -File "$RUNNER_TEMP/mcp-gateway-selfcheck.ps1"
+          else
+            echo "::notice::当前 Runner 无 pwsh，跳过网关路由生成器自检"
           fi
 
       # 文档台账一致性审计（规则见 docs/00-文档管理规范.md）：台账 ↔ 文内属性表的编号 / 版本 / 状态 / 日期一致；
