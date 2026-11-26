@@ -4,7 +4,8 @@ setlocal EnableExtensions
 rem ai-mcp self tests (T-TEST-01). Runs the test-<configKey>.bat of every case in cases\services.json and aggregates.
 rem Exit codes: 0 PASS, 1 FAIL (worst), 2 BLOCKED, 3 USAGE. Precedence: FAIL > BLOCKED > USAGE.
 rem Usage: scripts\tests\run-tests.bat [--structural] [--via gateway] [--gateway-url URL] [--gateway-agent NAME]
-rem        [--config PATH] [--expect-tools N] [--service ID] [--only id,id] [--timeout-ms N] [--help]
+rem        [--config PATH] [--expect-tools N] [--service ID] [--only id,id] [--snapshot] [--diff] [--timeout-ms N] [--help]
+rem --snapshot writes tools/list to tools-snapshot\<Id>.json; --diff compares against it (exit 1 when tools changed).
 set "HERE=%~dp0"
 where node >nul 2>nul
 if errorlevel 1 (
@@ -14,7 +15,8 @@ if errorlevel 1 (
 set "HAS_FAIL="
 set "HAS_BLOCK="
 set "HAS_USAGE="
-echo %* | findstr /i /c:"--structural" >nul
+rem --structural / --snapshot / --diff do not need the login preflight (no environment self-check in these modes).
+echo %* | findstr /i /c:"--structural" /c:"--snapshot" /c:"--diff" >nul
 if not errorlevel 1 goto tests
 call "%HERE%preflight.bat" %*
 if errorlevel 3 exit /b 3

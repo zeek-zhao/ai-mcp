@@ -643,6 +643,20 @@ jobs:
           node --version
           node scripts/tests/lib/mcp-stdio-test.mjs --structural
 
+      # 升级工作流（T-FLOW-02）：PR 改了用例里的期望工具数、且任一服务的变化超过 ±20% 时，
+      # PR 描述必须粘贴 run-tests.bat --diff 的「工具快照差异」摘要（新增 / 删除 / 签名变化），否则不允许合并。
+      # PR 描述经环境变量传入，不拼进脚本，避免描述内容被当作命令执行。
+      - name: PR 工具数变化校验（变化超过 ±20% 时须附差异摘要）
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_BODY_FILE: ${{ runner.temp }}/pr-body.md
+        run: |
+          set -e
+          printf '%s' "$PR_BODY" > "$PR_BODY_FILE"
+          node scripts/tests/lib/check-pr-tool-diff.mjs --base "$PR_BASE_SHA" --body-file "$PR_BODY_FILE"
+
       - name: PowerShell 脚本语法解析（若 pwsh 可用）
         run: |
           if command -v pwsh >/dev/null 2>&1; then
