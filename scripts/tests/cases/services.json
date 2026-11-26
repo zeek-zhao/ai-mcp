@@ -1,0 +1,33 @@
+{
+  "_comment": "自检用例（T-TEST-01）：每个服务的期望工具数与一条只读调用。id / configKey 以 scripts/mcpctl.config.ps1 为准；gatewayName 须与 gateway.routes.sample.json 的键一致；期望工具数与上游锁定版本对应（升级服务时同步更新）。本文件不含任何凭证或实例地址。",
+  "services": [
+    {
+      "id": "mcp-gerrit",
+      "configKey": "gerrit",
+      "gatewayName": "Gerrit",
+      "expectedTools": 20,
+      "readOnlyCall": { "tool": "query_changes", "arguments": { "query": "is:open limit:1" } }
+    },
+    {
+      "id": "mcp-github",
+      "configKey": "github",
+      "gatewayName": "GitHub",
+      "expectedTools": 46,
+      "readOnlyCall": { "tool": "get_me", "arguments": {} }
+    },
+    {
+      "id": "mcp-jenkins",
+      "configKey": "jenkins",
+      "gatewayName": "Jenkins",
+      "expectedTools": 14,
+      "readOnlyCall": { "tool": "getJobs", "arguments": {} }
+    },
+    {
+      "id": "mcp-atlassian",
+      "configKey": "atlassian",
+      "gatewayName": "Atlassian",
+      "expectedTools": 98,
+      "readOnlyCall": { "tool": "jira_get_all_projects", "arguments": {} }
+    }
+  ]
+}
