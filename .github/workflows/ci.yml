@@ -469,9 +469,12 @@ jobs:
           $problems = @(Test-McpGatewayRoutes -Routes $routes -Root $root)
           if ($problems.Count -gt 0) { $problems | ForEach-Object { Write-Host "::error::$_" }; exit 1 }
           $sample = [IO.File]::ReadAllText((Join-Path $root 'gateway.routes.sample.json')) | ConvertFrom-Json
+          # 样例是 Windows 形态（反斜杠）；Linux Runner 上生成器输出正斜杠：比较前两侧统一成正斜杠，并把仓库根前缀换成占位符
+          $rootSlash = $root.Replace('\', '/')
           function ConvertTo-SampleItem([string]$Text) {
-              if ($Text.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { return $placeholder + $Text.Substring($root.Length) }
-              return $Text
+              $t = $Text.Replace('\', '/')
+              if ($t.StartsWith($rootSlash, [StringComparison]::OrdinalIgnoreCase)) { return $placeholder + $t.Substring($rootSlash.Length) }
+              return $t
           }
           $names = @($sample.mcpServers.PSObject.Properties.Name)
           if (@(Compare-Object @($routes['mcpServers'].Keys) $names).Count -gt 0) {
@@ -484,8 +487,13 @@ jobs:
               $command = ConvertTo-SampleItem $entry['command']
               $argList = @($entry['args'] | ForEach-Object { ConvertTo-SampleItem $_ })
               $configPath = ConvertTo-SampleItem $entry['env']['MCP_SUITE_CONFIG']
-              if ($command -ne $want.command -or ($argList -join '|') -ne (@($want.args) -join '|') -or $configPath -ne $want.env.MCP_SUITE_CONFIG) {
+              $wantCommand = ([string]$want.command).Replace('\', '/')
+              $wantArgs = @(@($want.args) | ForEach-Object { ([string]$_).Replace('\', '/') })
+              $wantConfig = ([string]$want.env.MCP_SUITE_CONFIG).Replace('\', '/')
+              if ($command -ne $wantCommand -or ($argList -join '|') -ne ($wantArgs -join '|') -or $configPath -ne $wantConfig) {
                   Write-Host "::error::生成的 $name 路由与样例不一致（command / args / env.MCP_SUITE_CONFIG；样例使用占位符 $placeholder）"
+                  Write-Host ("   生成：command={0} args={1} env={2}" -f $command, ($argList -join ' '), $configPath)
+                  Write-Host ("   样例：command={0} args={1} env={2}" -f $wantCommand, ($wantArgs -join ' '), $wantConfig)
                   exit 1
               }
           }
